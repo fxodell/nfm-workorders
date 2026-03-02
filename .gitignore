@@ -1,0 +1,48 @@
+# Environment
+.env
+.env.local
+.env.production
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+*.egg
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# IDE
+.cursor/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Celery
+celerybeat-schedule
+celerybeat-schedule.db
+
+# Docker volumes
+pgdata/
+redisdata/
+miniodata/
+
+# Scratch
+scratch/
+
+# Data exports
+data/
+
+# Build
+*.pyc
+build/
