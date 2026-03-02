@@ -49,8 +49,17 @@ class Settings(BaseSettings):
     SENDGRID_API_KEY: str = ""
     EMAIL_FROM: str = "noreply@yourorg.com"
 
-    # ── Frontend ────────────────────────────────────────────────────────
+    # ── Frontend / CORS ───────────────────────────────────────────────────
     FRONTEND_URL: str = "http://localhost:5173"
+    CORS_ORIGINS: str = ""  # comma-separated extra origins, e.g. "https://workorders.nfmconsulting.com,http://34.174.244.219"
+
+    @property
+    def allowed_origins(self) -> list[str]:
+        """Return deduplicated list of CORS origins."""
+        origins = [self.FRONTEND_URL]
+        if self.CORS_ORIGINS:
+            origins.extend(o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip())
+        return list(dict.fromkeys(origins))
 
     # ── Observability ───────────────────────────────────────────────────
     SENTRY_DSN: str = ""
