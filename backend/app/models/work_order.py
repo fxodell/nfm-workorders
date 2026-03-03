@@ -68,6 +68,7 @@ class WorkOrderStatus(str, enum.Enum):
     VERIFIED = "VERIFIED"
     CLOSED = "CLOSED"
     ESCALATED = "ESCALATED"
+    CANCELLED = "CANCELLED"
 
 
 class TimelineEventType(str, enum.Enum):
@@ -82,6 +83,9 @@ class TimelineEventType(str, enum.Enum):
     ESCALATION = "ESCALATION"
     GPS_SNAPSHOT = "GPS_SNAPSHOT"
     SAFETY_FLAG_SET = "SAFETY_FLAG_SET"
+    ESCALATED = "ESCALATED"
+    CANCELLED = "CANCELLED"
+    ATTACHMENT_ADDED = "ATTACHMENT_ADDED"
 
 
 # ---------------------------------------------------------------------------

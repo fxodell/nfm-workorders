@@ -97,7 +97,13 @@ def generate_presigned_download_url(
         "Key": s3_key,
     }
     if filename:
-        params["ResponseContentDisposition"] = f'attachment; filename="{filename}"'
+        # Sanitize filename for Content-Disposition header
+        import re
+        safe_name = re.sub(r'["\'\n\r\x00]', "", filename)
+        safe_name = safe_name.replace("..", "")
+        if not safe_name:
+            safe_name = "download"
+        params["ResponseContentDisposition"] = f"attachment; filename=\"{safe_name}\""
 
     return s3.generate_presigned_url(
         ClientMethod="get_object",

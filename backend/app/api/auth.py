@@ -71,20 +71,40 @@ def _issue_tokens(user: User) -> dict:
 
 # ── POST /login ────────────────────────────────────────────────────────
 
+_LOGIN_FAIL_PREFIX = "login_fail:"
+_LOGIN_FAIL_TTL = 900  # 15 minutes
+_LOGIN_FAIL_MAX = 5
+
+
 @router.post("/login", response_model=LoginResponse)
 @limiter.limit(RATE_AUTH)
 async def login(
     request: Request,
     body: LoginRequest,
     db: AsyncSession = Depends(get_db),
+    r: aioredis.Redis = Depends(get_redis),
 ):
     """Authenticate with email + password. Returns tokens or MFA challenge."""
+    # Check account lockout
+    lockout_key = f"{_LOGIN_FAIL_PREFIX}{body.email.lower()}"
+    fail_count = await r.get(lockout_key)
+    if fail_count and int(fail_count) >= _LOGIN_FAIL_MAX:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Account temporarily locked due to too many failed login attempts. Try again later.",
+        )
+
     result = await db.execute(
         select(User).where(User.email == body.email.lower())
     )
     user = result.scalars().first()
 
     if user is None or not verify_password(body.password, user.password_hash):
+        # Increment failed login counter
+        pipe = r.pipeline()
+        pipe.incr(lockout_key)
+        pipe.expire(lockout_key, _LOGIN_FAIL_TTL)
+        await pipe.execute()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
@@ -108,6 +128,9 @@ async def login(
             mfa_session_token=mfa_session,
         )
 
+    # Clear failed login counter on success
+    await r.delete(lockout_key)
+
     # Update last login
     user.last_login_at = datetime.now(timezone.utc)
     await db.flush()
@@ -119,7 +142,9 @@ async def login(
 # ── POST /refresh ──────────────────────────────────────────────────────
 
 @router.post("/refresh", response_model=TokenResponse)
+@limiter.limit(RATE_AUTH)
 async def refresh_token(
+    request: Request,
     body: RefreshRequest,
     db: AsyncSession = Depends(get_db),
     r: aioredis.Redis = Depends(get_redis),
@@ -208,6 +233,7 @@ async def get_ws_token(
 async def mfa_setup(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    r: aioredis.Redis = Depends(get_redis),
 ):
     """Generate a TOTP secret and QR code for MFA enrollment."""
     if current_user.mfa_enabled:
@@ -217,8 +243,9 @@ async def mfa_setup(
         )
 
     secret = generate_totp_secret()
-    current_user.totp_secret = secret
-    await db.flush()
+
+    # Store secret in Redis temporarily (5-minute TTL) instead of DB
+    await r.set(f"mfa_setup:{current_user.id}", secret, ex=300)
 
     provisioning_uri = f"otpauth://totp/OFMaint%20CMMS:{current_user.email}?secret={secret}&issuer=OFMaint%20CMMS"
     qr_data_url = generate_qr_data_url(secret, current_user.email)
@@ -233,10 +260,13 @@ async def mfa_setup(
 # ── POST /mfa/verify ──────────────────────────────────────────────────
 
 @router.post("/mfa/verify", response_model=MessageResponse)
+@limiter.limit(RATE_AUTH)
 async def mfa_verify(
+    request: Request,
     body: MFAVerifyRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    r: aioredis.Redis = Depends(get_redis),
 ):
     """Verify a TOTP code and enable MFA on the account."""
     if current_user.mfa_enabled:
@@ -245,20 +275,31 @@ async def mfa_verify(
             detail="MFA is already enabled",
         )
 
-    if not current_user.totp_secret:
+    # Read the pending secret from Redis (set during /mfa/setup)
+    redis_key = f"mfa_setup:{current_user.id}"
+    secret = await r.get(redis_key)
+    if not secret:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Call /mfa/setup first to generate a TOTP secret",
         )
+    if isinstance(secret, bytes):
+        secret = secret.decode()
 
-    if not verify_totp(current_user.totp_secret, body.code):
+    if not verify_totp(secret, body.code):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid TOTP code",
         )
 
+    # Only persist the secret after successful verification
+    current_user.totp_secret = secret
     current_user.mfa_enabled = True
     await db.flush()
+
+    # Clean up the temporary Redis key
+    await r.delete(redis_key)
+
     return MessageResponse(message="MFA enabled successfully")
 
 
@@ -314,7 +355,9 @@ async def mfa_confirm(
 # ── POST /mfa/disable ─────────────────────────────────────────────────
 
 @router.post("/mfa/disable", response_model=MessageResponse)
+@limiter.limit(RATE_AUTH)
 async def mfa_disable(
+    request: Request,
     body: MFAVerifyRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),

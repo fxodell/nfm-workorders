@@ -19,7 +19,7 @@ from app.core.deps import (
 )
 from app.core.idempotency import IdempotencyResult, idempotency_check
 from app.models.org import Organization, WOCounter
-from app.models.user import User, UserAreaAssignment
+from app.models.user import TechnicianCertification, User, UserAreaAssignment
 from app.models.work_order import (
     TimelineEvent,
     TimelineEventType,
@@ -38,38 +38,22 @@ from app.schemas.work_order import (
     WorkOrderResponse,
     WorkOrderUpdate,
 )
+from app.services.work_order_service import (
+    generate_human_readable_number,
+    validate_fsm_transition,
+)
 
 router = APIRouter(prefix="/work-orders", tags=["work-orders"])
 
-# ── FSM valid transitions ──────────────────────────────────────────────
 
-VALID_TRANSITIONS: dict[WorkOrderStatus, set[WorkOrderStatus]] = {
-    WorkOrderStatus.NEW: {WorkOrderStatus.ASSIGNED, WorkOrderStatus.ACCEPTED, WorkOrderStatus.ESCALATED},
-    WorkOrderStatus.ASSIGNED: {WorkOrderStatus.ACCEPTED, WorkOrderStatus.ESCALATED},
-    WorkOrderStatus.ACCEPTED: {WorkOrderStatus.IN_PROGRESS, WorkOrderStatus.ESCALATED},
-    WorkOrderStatus.IN_PROGRESS: {
-        WorkOrderStatus.WAITING_ON_OPS,
-        WorkOrderStatus.WAITING_ON_PARTS,
-        WorkOrderStatus.RESOLVED,
-        WorkOrderStatus.ESCALATED,
-    },
-    WorkOrderStatus.WAITING_ON_OPS: {WorkOrderStatus.IN_PROGRESS, WorkOrderStatus.ESCALATED},
-    WorkOrderStatus.WAITING_ON_PARTS: {WorkOrderStatus.IN_PROGRESS, WorkOrderStatus.ESCALATED},
-    WorkOrderStatus.RESOLVED: {WorkOrderStatus.VERIFIED, WorkOrderStatus.ESCALATED},
-    WorkOrderStatus.VERIFIED: {WorkOrderStatus.CLOSED},
-    WorkOrderStatus.CLOSED: {WorkOrderStatus.RESOLVED},
-    WorkOrderStatus.ESCALATED: {WorkOrderStatus.IN_PROGRESS, WorkOrderStatus.ASSIGNED},
-}
+def _validate_transition(current: WorkOrderStatus, target: WorkOrderStatus, user_role: str = "SUPER_ADMIN") -> None:
+    """Validate FSM transition using the canonical service function.
 
-
-def _validate_transition(current: WorkOrderStatus, target: WorkOrderStatus) -> None:
-    """Raise 422 if the transition is not valid."""
-    allowed = VALID_TRANSITIONS.get(current, set())
-    if target not in allowed:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Invalid transition from {current.value} to {target.value}",
-        )
+    Endpoints that already enforce roles via ``require_role()`` may pass
+    SUPER_ADMIN as a default so the service-level role check never blocks
+    (the route-level guard is authoritative).
+    """
+    validate_fsm_transition(current, target, user_role)
 
 
 async def _create_timeline_event(
@@ -89,29 +73,6 @@ async def _create_timeline_event(
     )
     db.add(event)
     return event
-
-
-async def _generate_human_readable_number(
-    db: AsyncSession, org_id: uuid.UUID,
-) -> str:
-    """Generate the next human-readable work-order number (WO-YYYY-NNNNNN)."""
-    year = datetime.now(timezone.utc).year
-    result = await db.execute(
-        select(WOCounter).where(
-            WOCounter.org_id == org_id,
-            WOCounter.year == year,
-        )
-    )
-    counter = result.scalars().first()
-    if counter is None:
-        counter = WOCounter(org_id=org_id, year=year, counter=0)
-        db.add(counter)
-        await db.flush()
-
-    counter.counter += 1
-    await db.flush()
-
-    return f"WO-{year}-{counter.counter:06d}"
 
 
 def _compute_sla_deadlines(
@@ -232,7 +193,7 @@ async def create_work_order(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Site not found")
     await verify_org_ownership(site, current_user)
 
-    human_readable = await _generate_human_readable_number(db, current_user.org_id)
+    human_readable = await generate_human_readable_number(db, current_user.org_id)
 
     # Load org for SLA config
     org = await db.get(Organization, current_user.org_id)
@@ -381,6 +342,19 @@ async def assign_work_order(
     if not assignee or assignee.org_id != current_user.org_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignee not found")
 
+    # Verify assignee is assigned to the work order's area
+    area_check = await db.execute(
+        select(UserAreaAssignment).where(
+            UserAreaAssignment.user_id == body.assigned_to,
+            UserAreaAssignment.area_id == wo.area_id,
+        )
+    )
+    if area_check.scalars().first() is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Assignee is not assigned to this work order's area",
+        )
+
     wo.assigned_to = body.assigned_to
     wo.assigned_at = datetime.now(timezone.utc)
     wo.status = WorkOrderStatus.ASSIGNED
@@ -409,6 +383,20 @@ async def accept_work_order(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     await verify_org_ownership(wo, current_user)
     _validate_transition(wo.status, WorkOrderStatus.ACCEPTED)
+
+    # Check required certification
+    if wo.required_cert:
+        cert_result = await db.execute(
+            select(TechnicianCertification).where(
+                TechnicianCertification.user_id == current_user.id,
+                TechnicianCertification.cert_name == wo.required_cert,
+            )
+        )
+        if cert_result.scalars().first() is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Required certification '{wo.required_cert}' not found for this user",
+            )
 
     wo.accepted_by = current_user.id
     wo.accepted_at = datetime.now(timezone.utc)

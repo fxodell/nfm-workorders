@@ -9,22 +9,44 @@ const apiClient = axios.create({
   withCredentials: true,
 });
 
-let isRefreshing = false;
-let failedQueue: Array<{
-  resolve: (token: string) => void;
-  reject: (error: unknown) => void;
-}> = [];
+let refreshPromise: Promise<string> | null = null;
+
+function isTokenExpired(token: string): boolean {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return payload.exp * 1000 < Date.now();
+  } catch {
+    return true;
+  }
+}
 
 function processQueue(error: unknown, token: string | null = null) {
-  failedQueue.forEach(({ resolve, reject }) => {
-    if (error) reject(error);
-    else if (token) resolve(token);
-  });
-  failedQueue = [];
+  // No-op: queue-based approach replaced by shared promise
 }
 
 apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  const { accessToken } = useAuthStore.getState();
+  const { accessToken, refreshToken, setTokens, logout } = useAuthStore.getState();
+
+  // Proactively refresh if the access token is expired
+  if (accessToken && isTokenExpired(accessToken) && refreshToken && !refreshPromise) {
+    refreshPromise = axios
+      .post(`${API_URL}/api/v1/auth/refresh`, { refresh_token: refreshToken })
+      .then((response) => {
+        const { access_token, refresh_token } = response.data;
+        setTokens(access_token, refresh_token);
+        return access_token as string;
+      })
+      .catch((err) => {
+        console.error('Token refresh failed:', err);
+        logout();
+        window.location.href = '/login';
+        throw err;
+      })
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+
   if (accessToken && config.headers) {
     config.headers.Authorization = `Bearer ${accessToken}`;
   }
@@ -37,22 +59,7 @@ apiClient.interceptors.response.use(
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
     if (error.response?.status === 401 && !originalRequest._retry) {
-      if (isRefreshing) {
-        return new Promise((resolve, reject) => {
-          failedQueue.push({
-            resolve: (token: string) => {
-              if (originalRequest.headers) {
-                originalRequest.headers.Authorization = `Bearer ${token}`;
-              }
-              resolve(apiClient(originalRequest));
-            },
-            reject,
-          });
-        });
-      }
-
       originalRequest._retry = true;
-      isRefreshing = true;
 
       const { refreshToken, setTokens, logout } = useAuthStore.getState();
 
@@ -62,24 +69,34 @@ apiClient.interceptors.response.use(
         return Promise.reject(error);
       }
 
+      // Use a shared promise so concurrent 401s all await the same refresh
+      if (!refreshPromise) {
+        refreshPromise = axios
+          .post(`${API_URL}/api/v1/auth/refresh`, { refresh_token: refreshToken })
+          .then((response) => {
+            const { access_token, refresh_token } = response.data;
+            setTokens(access_token, refresh_token);
+            return access_token as string;
+          })
+          .catch((err) => {
+            console.error('Token refresh failed:', err);
+            logout();
+            window.location.href = '/login';
+            throw err;
+          })
+          .finally(() => {
+            refreshPromise = null;
+          });
+      }
+
       try {
-        const response = await axios.post(`${API_URL}/api/v1/auth/refresh`, {
-          refresh_token: refreshToken,
-        });
-        const { access_token, refresh_token } = response.data;
-        setTokens(access_token, refresh_token);
-        processQueue(null, access_token);
+        const newToken = await refreshPromise;
         if (originalRequest.headers) {
-          originalRequest.headers.Authorization = `Bearer ${access_token}`;
+          originalRequest.headers.Authorization = `Bearer ${newToken}`;
         }
         return apiClient(originalRequest);
       } catch (refreshError) {
-        processQueue(refreshError, null);
-        logout();
-        window.location.href = '/login';
         return Promise.reject(refreshError);
-      } finally {
-        isRefreshing = false;
       }
     }
 

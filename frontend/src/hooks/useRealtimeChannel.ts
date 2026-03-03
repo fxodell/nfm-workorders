@@ -69,8 +69,8 @@ export function useRealtimeChannel(onEvent?: (event: WSEvent) => void) {
           const wsEvent = data as WSEvent;
           addNotification(wsEvent);
           onEvent?.(wsEvent);
-        } catch {
-          // Ignore parse errors
+        } catch (e) {
+          console.warn('WebSocket message parse error:', e);
         }
       };
 

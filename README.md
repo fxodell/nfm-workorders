@@ -44,7 +44,7 @@ Production-grade, offline-first Computerized Maintenance Management System (CMMS
 ## Architecture Overview
 
 ```
-worktickets/
+nfm-workorders/
 ├── backend/                    # FastAPI application
 │   ├── app/
 │   │   ├── api/                # Route handlers (REST endpoints)
@@ -91,7 +91,7 @@ worktickets/
 1. **Clone the repository**
    ```bash
    git clone <repository-url>
-   cd worktickets
+   cd nfm-workorders
    ```
 
 2. **Configure environment**

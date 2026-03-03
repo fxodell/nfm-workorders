@@ -24,7 +24,7 @@ pytest==8.3.4
 pytest-asyncio==0.25.0
 pytest-httpx==0.35.0
 opentelemetry-sdk==1.29.0
-opentelemetry-instrumentation-fastapi==0.50b0
+opentelemetry-instrumentation-fastapi==0.50b0  # Note: OTel instrumentation uses 0.x versioning (stable)
 opentelemetry-exporter-otlp==1.29.0
 prometheus-client==0.21.1
 sentry-sdk[fastapi]==2.19.2

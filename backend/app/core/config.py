@@ -8,7 +8,14 @@ with a clear error message.
 
 from __future__ import annotations
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_DEFAULT_SECRETS = {
+    "change-me-in-production-min-32-chars",
+    "change-me-too-different-from-secret-key",
+    "change-me-too-different-again",
+}
 
 
 class Settings(BaseSettings):
@@ -69,6 +76,25 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     LOG_LEVEL: str = "INFO"
     ALLOW_SELF_REGISTRATION: bool = False
+
+    @model_validator(mode="after")
+    def _validate_secrets(self) -> "Settings":
+        """Reject placeholder secrets in non-development environments."""
+        if self.ENVIRONMENT != "development":
+            for name in ("SECRET_KEY", "WS_SECRET_KEY", "MFA_SECRET_KEY"):
+                value = getattr(self, name)
+                if value in _DEFAULT_SECRETS:
+                    raise ValueError(
+                        f"{name} is still set to a placeholder default. "
+                        f"Set a strong, unique secret for non-development environments."
+                    )
+            # Ensure all three keys are distinct
+            keys = {self.SECRET_KEY, self.WS_SECRET_KEY, self.MFA_SECRET_KEY}
+            if len(keys) < 3:
+                raise ValueError(
+                    "SECRET_KEY, WS_SECRET_KEY, and MFA_SECRET_KEY must all be different."
+                )
+        return self
 
     @property
     def is_production(self) -> bool:

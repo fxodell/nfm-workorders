@@ -126,7 +126,7 @@ async def idempotency_check(
     # Attempt to acquire a processing lock to prevent concurrent duplicates.
     # The lock has a short TTL (60 s) to auto-expire if the request crashes.
     processing_key = f"{full_key}{IDEMPOTENCY_PROCESSING_SUFFIX}"
-    acquired = await r.set(processing_key, "1", ex=60, nx=True)
+    acquired = await r.set(processing_key, "1", ex=300, nx=True)
     if not acquired:
         # Another request with the same key is being processed right now.
         raise HTTPException(

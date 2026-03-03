@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import re
 import uuid
 from typing import Optional
 
@@ -29,7 +31,7 @@ class AttachmentCreateRequest(BaseModel):
     """Request to create an attachment record and get a presigned upload URL."""
     filename: str = Field(..., min_length=1, max_length=500)
     mime_type: str = Field(..., min_length=1, max_length=255)
-    size_bytes: Optional[int] = Field(default=None, ge=0)
+    size_bytes: Optional[int] = Field(default=None, ge=0, le=52428800)  # 50 MB max
     caption: Optional[str] = None
 
 
@@ -89,6 +91,14 @@ async def create_attachment(
     if not wo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     await verify_org_ownership(wo, current_user)
+
+    # Sanitize filename
+    filename = os.path.basename(body.filename)
+    filename = filename.replace("..", "").replace("\x00", "")
+    filename = re.sub(r'["\'\n\r]', "", filename)
+    if not filename:
+        filename = "attachment"
+    body.filename = filename
 
     # Generate presigned upload URL
     upload_info = generate_presigned_upload_url(

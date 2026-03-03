@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import enum
 import uuid
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timezone
 from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import (
@@ -114,7 +114,7 @@ class User(Base):
         DateTime(timezone=True),
         nullable=False,
         server_default=text("now()"),
-        onupdate=datetime.utcnow,
+        onupdate=lambda: datetime.now(timezone.utc),
     )
 
     # Relationships

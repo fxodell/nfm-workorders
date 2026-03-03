@@ -34,11 +34,23 @@ export const useAuthStore = create<AuthState>()(
       setMfaRequired: (required, sessionToken) =>
         set({ mfaRequired: required, mfaSessionToken: sessionToken || null }),
 
-      logout: () =>
+      logout: () => {
         set({
           accessToken: null, refreshToken: null, user: null,
           isAuthenticated: false, mfaRequired: false, mfaSessionToken: null,
-        }),
+        });
+        // Clear service worker caches to prevent stale authenticated data
+        if (typeof caches !== 'undefined') {
+          const knownPrefixes = ['dashboard-cache', 'work-orders-cache', 'sites-cache', 'assets-cache', 'parts-cache'];
+          caches.keys().then((names) => {
+            names.forEach((name) => {
+              if (knownPrefixes.some((prefix) => name.startsWith(prefix))) {
+                caches.delete(name);
+              }
+            });
+          });
+        }
+      },
     }),
     { name: 'ofmaint-auth' }
   )
