@@ -19,6 +19,7 @@ export enum WorkOrderStatus {
   VERIFIED = 'VERIFIED',
   CLOSED = 'CLOSED',
   ESCALATED = 'ESCALATED',
+  CANCELLED = 'CANCELLED',
 }
 
 export enum WorkOrderPriority {

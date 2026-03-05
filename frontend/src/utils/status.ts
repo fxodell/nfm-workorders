@@ -47,6 +47,10 @@ export const statusConfig: Record<WorkOrderStatus, {
     label: 'Escalated', variant: 'red',
     bgColor: 'bg-red-100', textColor: 'text-red-700', dotColor: 'bg-red-500',
   },
+  [WorkOrderStatus.CANCELLED]: {
+    label: 'Cancelled', variant: 'dark',
+    bgColor: 'bg-gray-200', textColor: 'text-gray-600', dotColor: 'bg-gray-400',
+  },
 };
 
 export function getStatusConfig(status: WorkOrderStatus) {
@@ -54,7 +58,7 @@ export function getStatusConfig(status: WorkOrderStatus) {
 }
 
 export function isActiveStatus(status: WorkOrderStatus): boolean {
-  return ![WorkOrderStatus.RESOLVED, WorkOrderStatus.VERIFIED, WorkOrderStatus.CLOSED].includes(status);
+  return ![WorkOrderStatus.RESOLVED, WorkOrderStatus.VERIFIED, WorkOrderStatus.CLOSED, WorkOrderStatus.CANCELLED].includes(status);
 }
 
 export function isWaitingStatus(status: WorkOrderStatus): boolean {

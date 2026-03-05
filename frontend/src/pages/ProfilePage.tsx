@@ -45,6 +45,8 @@ export default function ProfilePage() {
 
   const [showMfaSetup, setShowMfaSetup] = useState(false);
   const [mfaCode, setMfaCode] = useState('');
+  const [showMfaDisable, setShowMfaDisable] = useState(false);
+  const [mfaDisableCode, setMfaDisableCode] = useState('');
 
   const [certsExpanded, setCertsExpanded] = useState(false);
   const [shiftsExpanded, setShiftsExpanded] = useState(false);
@@ -134,15 +136,13 @@ export default function ProfilePage() {
   });
 
   const mfaDisableMutation = useMutation({
-    mutationFn: () => {
-      const code = prompt('Enter your MFA code to disable');
-      if (!code) return Promise.reject(new Error('Cancelled'));
-      return authApi.mfaDisable(code);
-    },
+    mutationFn: () => authApi.mfaDisable(mfaDisableCode),
     onSuccess: () => {
       if (user) {
         setUser({ ...user, mfa_enabled: false });
       }
+      setShowMfaDisable(false);
+      setMfaDisableCode('');
     },
   });
 
@@ -432,13 +432,48 @@ export default function ProfilePage() {
 
         <div className="mt-4">
           {user.mfa_enabled ? (
-            <button
-              onClick={() => mfaDisableMutation.mutate()}
-              disabled={mfaDisableMutation.isPending}
-              className="px-4 py-2.5 border border-red-300 text-red-600 rounded-lg font-medium min-h-[48px] hover:bg-red-50"
-            >
-              {mfaDisableMutation.isPending ? 'Disabling...' : 'Disable MFA'}
-            </button>
+            <>
+              {!showMfaDisable ? (
+                <button
+                  onClick={() => setShowMfaDisable(true)}
+                  className="px-4 py-2.5 border border-red-300 text-red-600 rounded-lg font-medium min-h-[48px] hover:bg-red-50"
+                >
+                  Disable MFA
+                </button>
+              ) : (
+                <div className="space-y-3 border border-red-200 rounded-lg p-4 bg-red-50">
+                  <p className="text-sm text-red-700 font-medium">Enter your MFA code to confirm disabling:</p>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={mfaDisableCode}
+                    onChange={(e) => setMfaDisableCode(e.target.value.replace(/\D/g, ''))}
+                    placeholder="000000"
+                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm text-center text-lg font-mono tracking-widest min-h-[48px] focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    autoFocus
+                  />
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => { setShowMfaDisable(false); setMfaDisableCode(''); }}
+                      className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg font-medium text-gray-700 min-h-[48px]"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => mfaDisableMutation.mutate()}
+                      disabled={mfaDisableCode.length !== 6 || mfaDisableMutation.isPending}
+                      className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg font-medium min-h-[48px] disabled:opacity-50"
+                    >
+                      {mfaDisableMutation.isPending ? 'Disabling...' : 'Confirm Disable'}
+                    </button>
+                  </div>
+                  {mfaDisableMutation.isError && (
+                    <p className="text-red-600 text-sm text-center">Invalid code. Please try again.</p>
+                  )}
+                </div>
+              )}
+            </>
           ) : (
             <>
               {!showMfaSetup ? (
@@ -576,7 +611,7 @@ export default function ProfilePage() {
                 className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0"
               >
                 <div className="text-sm font-medium text-gray-900 min-w-0 flex-1 truncate">
-                  Area {pref.area_id.slice(0, 8)}
+                  Area {pref.area_id?.slice(0, 8) ?? 'Unknown'}
                 </div>
                 <div className="flex items-center gap-4 shrink-0">
                   <label className="flex items-center gap-2 cursor-pointer min-h-[48px]">

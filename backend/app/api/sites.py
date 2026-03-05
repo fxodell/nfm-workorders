@@ -55,7 +55,7 @@ async def _get_site_with_access(
 
 # ── GET / ──────────────────────────────────────────────────────────────
 
-@router.get("/", response_model=list[SiteResponse])
+@router.get("", response_model=list[SiteResponse])
 async def list_sites(
     location_id: Optional[uuid.UUID] = Query(None),
     db: AsyncSession = Depends(get_db),
@@ -72,7 +72,7 @@ async def list_sites(
 
 # ── POST / ─────────────────────────────────────────────────────────────
 
-@router.post("/", response_model=SiteResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=SiteResponse, status_code=status.HTTP_201_CREATED)
 async def create_site(
     body: SiteCreate,
     db: AsyncSession = Depends(get_db),

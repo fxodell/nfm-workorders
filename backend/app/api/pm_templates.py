@@ -25,7 +25,7 @@ router = APIRouter(prefix="/pm-templates", tags=["pm-templates"])
 
 # ── GET / ──────────────────────────────────────────────────────────────
 
-@router.get("/", response_model=list[PMTemplateResponse])
+@router.get("", response_model=list[PMTemplateResponse])
 async def list_pm_templates(
     site_id: Optional[uuid.UUID] = Query(None),
     asset_id: Optional[uuid.UUID] = Query(None),
@@ -50,7 +50,7 @@ async def list_pm_templates(
 
 # ── POST / ─────────────────────────────────────────────────────────────
 
-@router.post("/", response_model=PMTemplateResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=PMTemplateResponse, status_code=status.HTTP_201_CREATED)
 async def create_pm_template(
     body: PMTemplateCreate,
     db: AsyncSession = Depends(get_db),

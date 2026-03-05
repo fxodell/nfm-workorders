@@ -56,10 +56,16 @@ def _init_firebase() -> firebase_admin.App | None:
 
     # Guard against placeholder/example values
     if service_account_info.get("project_id", "").startswith("your-"):
-        logger.warning(
-            "FIREBASE_SERVICE_ACCOUNT_JSON contains placeholder values; "
-            "push notifications disabled"
-        )
+        if settings.is_production:
+            logger.error(
+                "FIREBASE_SERVICE_ACCOUNT_JSON contains placeholder values in production! "
+                "Push notifications will be disabled. Configure valid Firebase credentials."
+            )
+        else:
+            logger.warning(
+                "FIREBASE_SERVICE_ACCOUNT_JSON contains placeholder values; "
+                "push notifications disabled"
+            )
         return None
 
     try:

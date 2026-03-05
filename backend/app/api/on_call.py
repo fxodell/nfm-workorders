@@ -52,7 +52,7 @@ class OnCallResponse(BaseModel):
 
 # ── GET / ──────────────────────────────────────────────────────────────
 
-@router.get("/", response_model=list[OnCallResponse])
+@router.get("", response_model=list[OnCallResponse])
 async def list_on_call(
     area_id: Optional[uuid.UUID] = Query(None),
     db: AsyncSession = Depends(get_db),
@@ -81,7 +81,7 @@ async def list_on_call(
 
 # ── POST / ─────────────────────────────────────────────────────────────
 
-@router.post("/", response_model=OnCallResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=OnCallResponse, status_code=status.HTTP_201_CREATED)
 async def create_on_call(
     body: OnCallCreate,
     db: AsyncSession = Depends(get_db),

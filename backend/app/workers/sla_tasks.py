@@ -15,7 +15,7 @@ def check_sla_breaches() -> dict:
     Runs synchronously in Celery worker with its own DB session.
     """
     import asyncio
-    return asyncio.get_event_loop().run_until_complete(_check_sla_breaches_async())
+    return asyncio.run(_check_sla_breaches_async())
 
 
 async def _check_sla_breaches_async() -> dict:
@@ -32,6 +32,8 @@ async def _check_sla_breaches_async() -> dict:
     breaches = {"ack": 0, "first_update": 0, "resolve": 0}
 
     async with session_factory() as db:
+        from sqlalchemy import distinct
+
         # ACK breach: past ack_deadline, not yet accepted
         result = await db.execute(
             select(WorkOrder).where(
@@ -41,22 +43,27 @@ async def _check_sla_breaches_async() -> dict:
             )
         )
         ack_breached = result.scalars().all()
-        for wo in ack_breached:
-            existing = await db.execute(
-                select(SLAEvent).where(
-                    SLAEvent.work_order_id == wo.id,
+
+        if ack_breached:
+            ack_ids = [wo.id for wo in ack_breached]
+            existing_result = await db.execute(
+                select(distinct(SLAEvent.work_order_id)).where(
+                    SLAEvent.work_order_id.in_(ack_ids),
                     SLAEvent.event_type == SLAEventType.ACK_BREACH,
                 )
             )
-            if not existing.scalar_one_or_none():
-                sla_event = SLAEvent(
-                    work_order_id=wo.id,
-                    org_id=wo.org_id,
-                    event_type=SLAEventType.ACK_BREACH,
-                    triggered_at=now,
-                )
-                db.add(sla_event)
-                breaches["ack"] += 1
+            already_breached = set(existing_result.scalars().all())
+
+            for wo in ack_breached:
+                if wo.id not in already_breached:
+                    sla_event = SLAEvent(
+                        work_order_id=wo.id,
+                        org_id=wo.org_id,
+                        event_type=SLAEventType.ACK_BREACH,
+                        triggered_at=now,
+                    )
+                    db.add(sla_event)
+                    breaches["ack"] += 1
 
         # First update breach: past first_update_deadline with no user timeline events
         result = await db.execute(
@@ -70,23 +77,30 @@ async def _check_sla_breaches_async() -> dict:
             )
         )
         update_candidates = result.scalars().all()
-        for wo in update_candidates:
-            # Check if any user-created timeline event exists
-            user_events = await db.execute(
-                select(TimelineEvent).where(
-                    TimelineEvent.work_order_id == wo.id,
+
+        if update_candidates:
+            candidate_ids = [wo.id for wo in update_candidates]
+
+            # Batch-fetch: WO IDs that have at least one user-created timeline event
+            events_result = await db.execute(
+                select(distinct(TimelineEvent.work_order_id)).where(
+                    TimelineEvent.work_order_id.in_(candidate_ids),
                     TimelineEvent.user_id.isnot(None),
-                    TimelineEvent.created_at > wo.created_at,
                 )
             )
-            if not user_events.scalar_one_or_none():
-                existing = await db.execute(
-                    select(SLAEvent).where(
-                        SLAEvent.work_order_id == wo.id,
-                        SLAEvent.event_type == SLAEventType.FIRST_UPDATE_BREACH,
-                    )
+            wo_ids_with_updates = set(events_result.scalars().all())
+
+            # Batch-fetch: WO IDs that already have a FIRST_UPDATE_BREACH SLA event
+            existing_result = await db.execute(
+                select(distinct(SLAEvent.work_order_id)).where(
+                    SLAEvent.work_order_id.in_(candidate_ids),
+                    SLAEvent.event_type == SLAEventType.FIRST_UPDATE_BREACH,
                 )
-                if not existing.scalar_one_or_none():
+            )
+            wo_ids_already_breached = set(existing_result.scalars().all())
+
+            for wo in update_candidates:
+                if wo.id not in wo_ids_with_updates and wo.id not in wo_ids_already_breached:
                     sla_event = SLAEvent(
                         work_order_id=wo.id,
                         org_id=wo.org_id,
@@ -110,38 +124,44 @@ async def _check_sla_breaches_async() -> dict:
             )
         )
         resolve_breached = result.scalars().all()
-        for wo in resolve_breached:
-            existing = await db.execute(
-                select(SLAEvent).where(
-                    SLAEvent.work_order_id == wo.id,
+
+        if resolve_breached:
+            resolve_ids = [wo.id for wo in resolve_breached]
+            existing_result = await db.execute(
+                select(distinct(SLAEvent.work_order_id)).where(
+                    SLAEvent.work_order_id.in_(resolve_ids),
                     SLAEvent.event_type == SLAEventType.RESOLVE_BREACH,
                 )
             )
-            if not existing.scalar_one_or_none():
-                wo.status = WorkOrderStatus.ESCALATED
-                wo.escalated_at = now
-                sla_event = SLAEvent(
-                    work_order_id=wo.id,
-                    org_id=wo.org_id,
-                    event_type=SLAEventType.RESOLVE_BREACH,
-                    triggered_at=now,
-                )
-                db.add(sla_event)
+            resolve_already_breached = set(existing_result.scalars().all())
 
-                # Create timeline event
-                timeline = TimelineEvent(
-                    work_order_id=wo.id,
-                    org_id=wo.org_id,
-                    user_id=None,
-                    event_type="STATUS_CHANGE",
-                    payload={
-                        "old_status": wo.status.value if hasattr(wo.status, 'value') else str(wo.status),
-                        "new_status": "ESCALATED",
-                        "reason": "SLA resolve deadline breached",
-                    },
-                )
-                db.add(timeline)
-                breaches["resolve"] += 1
+            for wo in resolve_breached:
+                if wo.id not in resolve_already_breached:
+                    old_status = wo.status.value if hasattr(wo.status, 'value') else str(wo.status)
+                    wo.status = WorkOrderStatus.ESCALATED
+                    wo.escalated_at = now
+                    sla_event = SLAEvent(
+                        work_order_id=wo.id,
+                        org_id=wo.org_id,
+                        event_type=SLAEventType.RESOLVE_BREACH,
+                        triggered_at=now,
+                    )
+                    db.add(sla_event)
+
+                    # Create timeline event
+                    timeline = TimelineEvent(
+                        work_order_id=wo.id,
+                        org_id=wo.org_id,
+                        user_id=None,
+                        event_type="STATUS_CHANGE",
+                        payload={
+                            "old_status": old_status,
+                            "new_status": "ESCALATED",
+                            "reason": "SLA resolve deadline breached",
+                        },
+                    )
+                    db.add(timeline)
+                    breaches["resolve"] += 1
 
         await db.commit()
 

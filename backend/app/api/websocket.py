@@ -9,11 +9,11 @@ import uuid
 from collections import defaultdict
 from typing import Any
 
+import redis.asyncio as aioredis
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from jose import JWTError
 
 from app.core.observability import WS_CONNECTIONS
-from app.core.redis import get_redis
 from app.core.security import decode_ws_token
 
 logger = logging.getLogger(__name__)
@@ -104,19 +104,17 @@ async def websocket_endpoint(
         await websocket.close(code=4001, reason="Invalid token payload")
         return
 
-    # Mark WS token as single-use to prevent replay attacks
+    # Mark WS token as single-use to prevent replay attacks (atomic SETNX)
     if jti:
-        import redis.asyncio as aioredis
-        r = aioredis.from_url(
-            __import__("app.core.config", fromlist=["settings"]).settings.REDIS_URL
-        )
+        from app.core.redis import redis_pool
+        r = aioredis.Redis(connection_pool=redis_pool)
         try:
             used_key = f"used_ws_token:{jti}"
-            already_used = await r.get(used_key)
-            if already_used:
+            # SET NX returns True only if the key was newly set (atomic check-and-mark)
+            was_set = await r.set(used_key, "1", ex=60, nx=True)
+            if not was_set:
                 await websocket.close(code=4001, reason="Token already used")
                 return
-            await r.set(used_key, "1", ex=60)
         finally:
             await r.aclose()
 

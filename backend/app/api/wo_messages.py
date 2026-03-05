@@ -104,27 +104,31 @@ async def send_message(
 
     # Publish WebSocket event for real-time delivery
     try:
-        import redis.asyncio as aioredis
-        from app.core.config import settings
         import json
+        import logging
+        import redis.asyncio as aioredis
+        from app.core.redis import redis_pool
 
-        r = aioredis.from_url(settings.REDIS_URL)
-        ws_payload = json.dumps({
-            "type": "wo_message",
-            "work_order_id": str(wo_id),
-            "message": {
-                "id": str(event.id),
-                "user_id": str(current_user.id),
-                "sender_name": current_user.name,
-                "content": body.content,
-                "created_at": event.created_at.isoformat() if event.created_at else None,
-            },
-        }, default=str)
-        await r.publish(f"wo:{wo_id}", ws_payload)
-        await r.aclose()
+        r = aioredis.Redis(connection_pool=redis_pool)
+        try:
+            ws_payload = json.dumps({
+                "type": "wo_message",
+                "work_order_id": str(wo_id),
+                "message": {
+                    "id": str(event.id),
+                    "user_id": str(current_user.id),
+                    "sender_name": current_user.name,
+                    "content": body.content,
+                    "created_at": event.created_at.isoformat() if event.created_at else None,
+                },
+            }, default=str)
+            await r.publish(f"wo:{wo_id}", ws_payload)
+        finally:
+            await r.aclose()
     except Exception:
-        # WebSocket delivery is best-effort; do not fail the request
-        pass
+        logging.getLogger(__name__).warning(
+            "Failed to publish WS event for wo=%s", wo_id, exc_info=True
+        )
 
     return WOMessageResponse(
         id=event.id,

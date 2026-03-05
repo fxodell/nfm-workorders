@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Building2, Users, FileText, Search, Plus, X, ChevronDown,
@@ -110,10 +110,10 @@ function OrgTab() {
   const [editingConfig, setEditingConfig] = useState(false);
 
   // Sync state when data loads
-  useMemo(() => {
+  useEffect(() => {
     if (org && !orgName) setOrgName(org.name);
     if (orgConfig && !slaConfig) setSlaConfig(orgConfig.sla);
-  }, [org, orgConfig]);
+  }, [org, orgConfig]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateOrgMutation = useMutation({
     mutationFn: (data: Partial<Organization>) => adminApi.updateOrg(data),

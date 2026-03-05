@@ -26,7 +26,7 @@ router = APIRouter(prefix="/budget", tags=["budget"])
 
 # ── GET / ──────────────────────────────────────────────────────────────
 
-@router.get("/", response_model=list[AreaBudgetResponse])
+@router.get("", response_model=list[AreaBudgetResponse])
 async def list_budgets(
     year: Optional[int] = Query(None),
     month: Optional[int] = Query(None),
@@ -49,7 +49,7 @@ async def list_budgets(
 
 # ── PUT / ──────────────────────────────────────────────────────────────
 
-@router.put("/", response_model=AreaBudgetResponse)
+@router.put("", response_model=AreaBudgetResponse)
 async def set_budget(
     body: AreaBudgetCreate,
     db: AsyncSession = Depends(get_db),

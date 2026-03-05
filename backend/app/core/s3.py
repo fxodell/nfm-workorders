@@ -116,9 +116,20 @@ def delete_object(s3_key: str) -> None:
     """Delete an object from S3 by key.
 
     Silently succeeds if the key does not exist (S3 DELETE is idempotent).
+    Logs a warning on failure rather than raising, to avoid breaking the
+    caller's transaction for a non-critical storage cleanup.
     """
+    import logging
+
     s3 = _get_s3_client()
-    s3.delete_object(
-        Bucket=settings.S3_BUCKET,
-        Key=s3_key,
-    )
+    try:
+        s3.delete_object(
+            Bucket=settings.S3_BUCKET,
+            Key=s3_key,
+        )
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "Failed to delete S3 object: bucket=%s key=%s",
+            settings.S3_BUCKET,
+            s3_key,
+        )

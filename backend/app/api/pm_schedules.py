@@ -33,7 +33,7 @@ router = APIRouter(prefix="/pm-schedules", tags=["pm-schedules"])
 
 # ── GET / ──────────────────────────────────────────────────────────────
 
-@router.get("/", response_model=list[PMScheduleResponse])
+@router.get("", response_model=list[PMScheduleResponse])
 async def list_pm_schedules(
     template_id: Optional[uuid.UUID] = Query(None),
     pm_status: Optional[str] = Query(None, alias="status"),

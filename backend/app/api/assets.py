@@ -32,7 +32,7 @@ router = APIRouter(prefix="/assets", tags=["assets"])
 
 # ── GET / ──────────────────────────────────────────────────────────────
 
-@router.get("/", response_model=list[AssetResponse])
+@router.get("", response_model=list[AssetResponse])
 async def list_assets(
     site_id: uuid.UUID | None = None,
     db: AsyncSession = Depends(get_db),
@@ -49,7 +49,7 @@ async def list_assets(
 
 # ── POST / ─────────────────────────────────────────────────────────────
 
-@router.post("/", response_model=AssetResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=AssetResponse, status_code=status.HTTP_201_CREATED)
 async def create_asset(
     body: AssetCreate,
     db: AsyncSession = Depends(get_db),

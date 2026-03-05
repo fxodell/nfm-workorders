@@ -35,7 +35,7 @@ router = APIRouter(prefix="/parts", tags=["parts"])
 
 # ── GET / ──────────────────────────────────────────────────────────────
 
-@router.get("/", response_model=list[PartResponse])
+@router.get("", response_model=list[PartResponse])
 async def list_parts(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -51,7 +51,7 @@ async def list_parts(
 
 # ── POST / ─────────────────────────────────────────────────────────────
 
-@router.post("/", response_model=PartResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=PartResponse, status_code=status.HTTP_201_CREATED)
 async def create_part(
     body: PartCreate,
     db: AsyncSession = Depends(get_db),

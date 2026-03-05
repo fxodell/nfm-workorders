@@ -67,6 +67,11 @@ async def report_work_orders(
     current_user: User = Depends(get_current_active_user),
 ):
     """Work order summary report."""
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="date_from must be before date_to",
+        )
     query = select(WorkOrder).where(WorkOrder.org_id == current_user.org_id)
     if date_from:
         query = query.where(WorkOrder.created_at >= date_from)

@@ -29,7 +29,7 @@ router = APIRouter(prefix="/incentives", tags=["incentives"])
 
 # ── GET / ──────────────────────────────────────────────────────────────
 
-@router.get("/", response_model=list[IncentiveProgramResponse])
+@router.get("", response_model=list[IncentiveProgramResponse])
 async def list_incentive_programs(
     is_active: Optional[bool] = Query(None),
     db: AsyncSession = Depends(get_db),
@@ -48,7 +48,7 @@ async def list_incentive_programs(
 
 # ── POST / ─────────────────────────────────────────────────────────────
 
-@router.post("/", response_model=IncentiveProgramResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=IncentiveProgramResponse, status_code=status.HTTP_201_CREATED)
 async def create_incentive_program(
     body: IncentiveProgramCreate,
     db: AsyncSession = Depends(get_db),

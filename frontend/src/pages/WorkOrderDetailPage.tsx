@@ -2,12 +2,14 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { workOrderApi } from '@/api/workOrders';
+import { useAuthStore } from '@/stores/authStore';
 import WorkOrderDetailPanel from '@/components/WorkOrderDetailPanel';
 
 export default function WorkOrderDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const user = useAuthStore((s) => s.user);
 
   const {
     data: workOrder,
@@ -62,7 +64,7 @@ export default function WorkOrderDetailPage() {
   });
 
   const addPartMutation = useMutation({
-    mutationFn: (data: { part_id: string; quantity: number }) =>
+    mutationFn: (data: { part_number: string; description: string; quantity: number; unit_cost: number }) =>
       workOrderApi.addPart(id!, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workOrders', id, 'parts'] });
@@ -70,8 +72,8 @@ export default function WorkOrderDetailPage() {
   });
 
   const addLaborMutation = useMutation({
-    mutationFn: (data: { description: string; minutes: number }) =>
-      workOrderApi.addLabor(id!, data),
+    mutationFn: (data: { minutes: number; notes: string }) =>
+      workOrderApi.addLabor(id!, data.minutes, data.notes),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workOrders', id, 'labor'] });
     },
@@ -79,7 +81,7 @@ export default function WorkOrderDetailPage() {
 
   const sendMessageMutation = useMutation({
     mutationFn: (message: string) =>
-      workOrderApi.sendMessage(id!, { message }),
+      workOrderApi.sendMessage(id!, message),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workOrders', id, 'messages'] });
     },
@@ -147,24 +149,25 @@ export default function WorkOrderDetailPage() {
 
       <WorkOrderDetailPanel
         workOrder={workOrder}
-        timeline={timelineQuery.data ?? []}
+        timelineEvents={timelineQuery.data ?? []}
         messages={messagesQuery.data ?? []}
         parts={partsQuery.data ?? []}
-        labor={laborQuery.data ?? []}
+        laborLogs={laborQuery.data ?? []}
         attachments={attachmentsQuery.data ?? []}
-        onTransition={(action, body) => transitionMutation.mutate({ action, body })}
+        currentUserId={user?.id ?? ''}
+        currentUserRole={user?.role!}
+        onAction={(action, body) => transitionMutation.mutate({ action, body })}
         onAddPart={(data) => addPartMutation.mutate(data)}
         onRemovePart={(partId) => workOrderApi.removePart(id!, partId).then(() =>
           queryClient.invalidateQueries({ queryKey: ['workOrders', id, 'parts'] })
         )}
         onAddLabor={(data) => addLaborMutation.mutate(data)}
-        onRemoveLabor={(laborId) => workOrderApi.removeLabor(id!, laborId).then(() =>
+        onDeleteLabor={(laborId) => workOrderApi.removeLabor(id!, laborId).then(() =>
           queryClient.invalidateQueries({ queryKey: ['workOrders', id, 'labor'] })
         )}
         onSendMessage={(msg) => sendMessageMutation.mutate(msg)}
         onUploadAttachment={(file) => uploadAttachmentMutation.mutate(file)}
-        onToggleSafetyFlag={(flag) => toggleSafetyFlagMutation.mutate(flag)}
-        isTransitioning={transitionMutation.isPending}
+        onToggleSafetyFlag={() => toggleSafetyFlagMutation.mutate(!workOrder.safety_flag)}
       />
     </div>
   );

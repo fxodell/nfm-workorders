@@ -29,7 +29,7 @@ router = APIRouter(prefix="/shifts", tags=["shifts"])
 
 # ── GET / ──────────────────────────────────────────────────────────────
 
-@router.get("/", response_model=list[ShiftScheduleResponse])
+@router.get("", response_model=list[ShiftScheduleResponse])
 async def list_shifts(
     area_id: uuid.UUID | None = None,
     db: AsyncSession = Depends(get_db),
@@ -46,7 +46,7 @@ async def list_shifts(
 
 # ── POST / ─────────────────────────────────────────────────────────────
 
-@router.post("/", response_model=ShiftScheduleResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=ShiftScheduleResponse, status_code=status.HTTP_201_CREATED)
 async def create_shift(
     body: ShiftScheduleCreate,
     db: AsyncSession = Depends(get_db),

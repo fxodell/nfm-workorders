@@ -26,7 +26,7 @@ router = APIRouter(prefix="/areas", tags=["areas"])
 
 # ── GET / ──────────────────────────────────────────────────────────────
 
-@router.get("/", response_model=list[AreaResponse])
+@router.get("", response_model=list[AreaResponse])
 async def list_areas(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -42,7 +42,7 @@ async def list_areas(
 
 # ── POST / ─────────────────────────────────────────────────────────────
 
-@router.post("/", response_model=AreaResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=AreaResponse, status_code=status.HTTP_201_CREATED)
 async def create_area(
     body: AreaCreate,
     db: AsyncSession = Depends(get_db),

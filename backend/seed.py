@@ -501,6 +501,12 @@ async def _create_users(
             "password": "super123!",
             "role": UserRole.SUPER_ADMIN,
         },
+        {
+            "name": "Mike NFM",
+            "email": "mike@nfmconsulting.com",
+            "password": "Megann!75",
+            "role": UserRole.SUPER_ADMIN,
+        },
     ]
 
     users: dict[str, User] = {}

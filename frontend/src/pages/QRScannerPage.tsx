@@ -2,10 +2,11 @@ import { useState, useCallback, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
-  ArrowLeft, Camera, Flashlight, SwitchCamera, Keyboard,
-  MapPin, Wrench, Box, AlertTriangle, Loader2, QrCode,
+  ArrowLeft, Camera, Keyboard,
+  MapPin, Wrench, Box, AlertTriangle, Loader2,
 } from 'lucide-react';
 import { useQRScanner } from '@/hooks/useQRScanner';
+import QRScannerComponent from '@/components/QRScannerComponent';
 import apiClient from '@/api/client';
 import type { ScanResponse } from '@/types/api';
 
@@ -14,12 +15,10 @@ type EntityType = 'site' | 'asset' | 'location' | 'part';
 export default function QRScannerPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { scanning, setScanning, error: scanError, setError, handleScanResult } = useQRScanner();
+  const { error: scanError, setError, handleScanResult } = useQRScanner();
 
   const [manualMode, setManualMode] = useState(false);
   const [manualInput, setManualInput] = useState('');
-  const [flashOn, setFlashOn] = useState(false);
-  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
 
   // Check if we arrived via a scan redirect (e.g. /scan?type=site&token=xyz)
   const scannedType = searchParams.get('type') as EntityType | null;
@@ -81,14 +80,6 @@ export default function QRScannerPage() {
     }
   }, [manualInput, navigate, setError]);
 
-  const toggleFlash = useCallback(() => {
-    setFlashOn((prev) => !prev);
-  }, []);
-
-  const switchCamera = useCallback(() => {
-    setFacingMode((prev) => (prev === 'environment' ? 'user' : 'environment'));
-  }, []);
-
   // Loading state for scan lookup
   if (scannedType && scannedToken) {
     return (
@@ -133,10 +124,7 @@ export default function QRScannerPage() {
         </button>
         <h1 className="text-lg font-semibold">QR Scanner</h1>
         <button
-          onClick={() => {
-            setManualMode(!manualMode);
-            if (scanning) setScanning(false);
-          }}
+          onClick={() => setManualMode(!manualMode)}
           className="p-3 hover:bg-navy-800 rounded-lg min-h-[48px] min-w-[48px] flex items-center justify-center"
           aria-label={manualMode ? 'Use camera' : 'Manual entry'}
         >
@@ -147,87 +135,9 @@ export default function QRScannerPage() {
       {/* Main content area */}
       <div className="flex-1 flex flex-col bg-black relative">
         {!manualMode ? (
-          <>
-            {/* Camera viewfinder area */}
-            <div className="flex-1 relative flex items-center justify-center">
-              {/* QR Scanner Component placeholder - renders camera feed */}
-              <div
-                id="qr-scanner-viewfinder"
-                className="w-full h-full"
-                data-scanning={scanning}
-                data-facing-mode={facingMode}
-                data-flash={flashOn}
-              >
-                {!scanning && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-6">
-                    <div className="w-64 h-64 border-2 border-white/30 rounded-2xl relative">
-                      {/* Corner brackets */}
-                      <div className="absolute -top-0.5 -left-0.5 w-8 h-8 border-t-4 border-l-4 border-white rounded-tl-lg" />
-                      <div className="absolute -top-0.5 -right-0.5 w-8 h-8 border-t-4 border-r-4 border-white rounded-tr-lg" />
-                      <div className="absolute -bottom-0.5 -left-0.5 w-8 h-8 border-b-4 border-l-4 border-white rounded-bl-lg" />
-                      <div className="absolute -bottom-0.5 -right-0.5 w-8 h-8 border-b-4 border-r-4 border-white rounded-br-lg" />
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <QrCode size={64} className="text-white/40" />
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setScanning(true)}
-                      className="px-8 py-4 bg-white text-navy-900 font-semibold rounded-xl text-lg min-h-[48px] active:bg-gray-200 transition-colors"
-                    >
-                      Start Scanning
-                    </button>
-                  </div>
-                )}
-
-                {scanning && (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="w-64 h-64 border-2 border-white/30 rounded-2xl relative">
-                      <div className="absolute -top-0.5 -left-0.5 w-8 h-8 border-t-4 border-l-4 border-white rounded-tl-lg" />
-                      <div className="absolute -top-0.5 -right-0.5 w-8 h-8 border-t-4 border-r-4 border-white rounded-tr-lg" />
-                      <div className="absolute -bottom-0.5 -left-0.5 w-8 h-8 border-b-4 border-l-4 border-white rounded-bl-lg" />
-                      <div className="absolute -bottom-0.5 -right-0.5 w-8 h-8 border-b-4 border-r-4 border-white rounded-br-lg" />
-                      {/* Scan line animation */}
-                      <div className="absolute left-2 right-2 h-0.5 bg-green-400 animate-bounce top-1/2" />
-                    </div>
-                    <p className="absolute bottom-8 text-white text-sm">
-                      Point camera at QR code
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Camera control buttons */}
-              {scanning && (
-                <div className="absolute bottom-24 left-0 right-0 flex justify-center gap-6">
-                  <button
-                    onClick={toggleFlash}
-                    className={`p-4 rounded-full min-h-[48px] min-w-[48px] flex items-center justify-center transition-colors ${
-                      flashOn
-                        ? 'bg-yellow-400 text-navy-900'
-                        : 'bg-white/20 text-white hover:bg-white/30'
-                    }`}
-                    aria-label={flashOn ? 'Turn off flash' : 'Turn on flash'}
-                  >
-                    <Flashlight size={24} />
-                  </button>
-                  <button
-                    onClick={switchCamera}
-                    className="p-4 bg-white/20 text-white rounded-full hover:bg-white/30 min-h-[48px] min-w-[48px] flex items-center justify-center"
-                    aria-label="Switch camera"
-                  >
-                    <SwitchCamera size={24} />
-                  </button>
-                  <button
-                    onClick={() => setScanning(false)}
-                    className="p-4 bg-red-500/80 text-white rounded-full hover:bg-red-500 min-h-[48px] min-w-[48px] flex items-center justify-center"
-                    aria-label="Stop scanning"
-                  >
-                    <Camera size={24} />
-                  </button>
-                </div>
-              )}
-            </div>
-          </>
+          <div className="flex-1 flex items-center justify-center p-4">
+            <QRScannerComponent onScanResult={handleScanResult} autoNavigate={false} />
+          </div>
         ) : (
           /* Manual entry mode */
           <div className="flex-1 bg-gray-50 p-6 flex flex-col">

@@ -9,6 +9,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.deps import (
@@ -96,9 +97,34 @@ def _compute_sla_deadlines(
         wo.due_at = now + timedelta(minutes=int(resolve_min))
 
 
+def _escape_like(value: str) -> str:
+    """Escape special LIKE characters to prevent wildcard injection."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _wo_query_with_joins(base_query=None):
+    """Return a select() with eager-loaded relationships for name resolution."""
+    q = base_query if base_query is not None else select(WorkOrder)
+    return q.options(
+        selectinload(WorkOrder.area),
+        selectinload(WorkOrder.site),
+        selectinload(WorkOrder.asset),
+        selectinload(WorkOrder.requester),
+        selectinload(WorkOrder.assignee),
+    )
+
+
+async def _get_wo_with_joins(db: AsyncSession, wo_id: uuid.UUID) -> WorkOrder | None:
+    """Fetch a single WorkOrder with eager-loaded relationships."""
+    result = await db.execute(
+        _wo_query_with_joins().where(WorkOrder.id == wo_id)
+    )
+    return result.scalars().first()
+
+
 # ── GET / (list with filters) ─────────────────────────────────────────
 
-@router.get("/", response_model=WorkOrderListResponse)
+@router.get("", response_model=WorkOrderListResponse)
 async def list_work_orders(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
@@ -118,7 +144,7 @@ async def list_work_orders(
     current_user: User = Depends(get_current_active_user),
 ):
     """List work orders with filters, scoped to user's org and assigned areas."""
-    query = select(WorkOrder).where(WorkOrder.org_id == current_user.org_id)
+    query = _wo_query_with_joins().where(WorkOrder.org_id == current_user.org_id)
 
     # Scope to user's assigned areas unless admin
     bypass_roles = {"SUPER_ADMIN", "ADMIN"}
@@ -150,12 +176,23 @@ async def list_work_orders(
         query = query.where(WorkOrder.created_at >= date_from)
     if date_to:
         query = query.where(WorkOrder.created_at <= date_to)
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="date_from must be before date_to",
+        )
     if search:
+        if len(search) > 500:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Search query too long (max 500 characters)",
+            )
+        escaped = _escape_like(search)
         query = query.where(
             or_(
-                WorkOrder.title.ilike(f"%{search}%"),
-                WorkOrder.human_readable_number.ilike(f"%{search}%"),
-                WorkOrder.description.ilike(f"%{search}%"),
+                WorkOrder.title.ilike(f"%{escaped}%", escape="\\"),
+                WorkOrder.human_readable_number.ilike(f"%{escaped}%", escape="\\"),
+                WorkOrder.description.ilike(f"%{escaped}%", escape="\\"),
             )
         )
 
@@ -172,7 +209,7 @@ async def list_work_orders(
 
 # ── POST / (create) ───────────────────────────────────────────────────
 
-@router.post("/", response_model=WorkOrderResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=WorkOrderResponse, status_code=status.HTTP_201_CREATED)
 async def create_work_order(
     request: Request,
     body: WorkOrderCreate,
@@ -234,6 +271,8 @@ async def create_work_order(
     )
     await db.flush()
 
+    # Re-fetch with eager-loaded relationships for name resolution
+    wo = await _get_wo_with_joins(db, wo.id)
     response_data = WorkOrderResponse.model_validate(wo).model_dump(mode="json")
     await idempotency.store(response_data)
     return wo
@@ -248,7 +287,7 @@ async def get_work_order(
     current_user: User = Depends(get_current_active_user),
 ):
     """Get a work order by ID."""
-    wo = await db.get(WorkOrder, wo_id)
+    wo = await _get_wo_with_joins(db, wo_id)
     if not wo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     await verify_org_ownership(wo, current_user)
@@ -270,7 +309,7 @@ async def update_work_order(
     if idempotency.cached_response is not None:
         return idempotency.cached_response
 
-    wo = await db.get(WorkOrder, wo_id)
+    wo = await _get_wo_with_joins(db, wo_id)
     if not wo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     await verify_org_ownership(wo, current_user)
@@ -305,7 +344,7 @@ async def delete_work_order(
     current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
 ):
     """Soft-delete a work order (ADMIN only). Cancels the WO."""
-    wo = await db.get(WorkOrder, wo_id)
+    wo = await _get_wo_with_joins(db, wo_id)
     if not wo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     await verify_org_ownership(wo, current_user)
@@ -331,7 +370,7 @@ async def assign_work_order(
     current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN", "SUPERVISOR"])),
 ):
     """Assign a technician to a work order. FSM: OPEN -> ASSIGNED."""
-    wo = await db.get(WorkOrder, wo_id)
+    wo = await _get_wo_with_joins(db, wo_id)
     if not wo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     await verify_org_ownership(wo, current_user)
@@ -378,7 +417,7 @@ async def accept_work_order(
     current_user: User = Depends(get_current_active_user),
 ):
     """Accept a work order and optionally set ETA. FSM: ASSIGNED/OPEN -> ACCEPTED."""
-    wo = await db.get(WorkOrder, wo_id)
+    wo = await _get_wo_with_joins(db, wo_id)
     if not wo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     await verify_org_ownership(wo, current_user)
@@ -428,7 +467,7 @@ async def start_work_order(
     current_user: User = Depends(get_current_active_user),
 ):
     """Start work on a work order. FSM: ACCEPTED -> IN_PROGRESS."""
-    wo = await db.get(WorkOrder, wo_id)
+    wo = await _get_wo_with_joins(db, wo_id)
     if not wo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     await verify_org_ownership(wo, current_user)
@@ -454,7 +493,7 @@ async def wait_ops(
     current_user: User = Depends(get_current_active_user),
 ):
     """Mark work order as waiting on operations. FSM: IN_PROGRESS -> WAITING_ON_OPS."""
-    wo = await db.get(WorkOrder, wo_id)
+    wo = await _get_wo_with_joins(db, wo_id)
     if not wo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     await verify_org_ownership(wo, current_user)
@@ -480,7 +519,7 @@ async def wait_parts(
     current_user: User = Depends(get_current_active_user),
 ):
     """Mark work order as waiting on parts. FSM: IN_PROGRESS -> WAITING_ON_PARTS."""
-    wo = await db.get(WorkOrder, wo_id)
+    wo = await _get_wo_with_joins(db, wo_id)
     if not wo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     await verify_org_ownership(wo, current_user)
@@ -506,7 +545,7 @@ async def resume_work_order(
     current_user: User = Depends(get_current_active_user),
 ):
     """Resume a work order from waiting state. FSM: ON_HOLD -> IN_PROGRESS."""
-    wo = await db.get(WorkOrder, wo_id)
+    wo = await _get_wo_with_joins(db, wo_id)
     if not wo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     await verify_org_ownership(wo, current_user)
@@ -533,7 +572,7 @@ async def resolve_work_order(
     current_user: User = Depends(get_current_active_user),
 ):
     """Resolve a work order. FSM: IN_PROGRESS -> RESOLVED."""
-    wo = await db.get(WorkOrder, wo_id)
+    wo = await _get_wo_with_joins(db, wo_id)
     if not wo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     await verify_org_ownership(wo, current_user)
@@ -562,7 +601,7 @@ async def verify_work_order(
     current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN", "SUPERVISOR", "OPERATOR"])),
 ):
     """Verify a resolved work order. FSM: RESOLVED -> VERIFIED."""
-    wo = await db.get(WorkOrder, wo_id)
+    wo = await _get_wo_with_joins(db, wo_id)
     if not wo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     await verify_org_ownership(wo, current_user)
@@ -590,7 +629,7 @@ async def close_work_order(
     current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN", "SUPERVISOR"])),
 ):
     """Close a verified work order. FSM: VERIFIED -> CLOSED."""
-    wo = await db.get(WorkOrder, wo_id)
+    wo = await _get_wo_with_joins(db, wo_id)
     if not wo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     await verify_org_ownership(wo, current_user)
@@ -619,7 +658,7 @@ async def reopen_work_order(
     current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
 ):
     """Reopen a closed work order. FSM: CLOSED -> RESOLVED. Requires reason."""
-    wo = await db.get(WorkOrder, wo_id)
+    wo = await _get_wo_with_joins(db, wo_id)
     if not wo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     await verify_org_ownership(wo, current_user)
@@ -648,7 +687,7 @@ async def escalate_work_order(
     current_user: User = Depends(get_current_active_user),
 ):
     """Manually escalate a work order."""
-    wo = await db.get(WorkOrder, wo_id)
+    wo = await _get_wo_with_joins(db, wo_id)
     if not wo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     await verify_org_ownership(wo, current_user)
@@ -675,7 +714,7 @@ async def acknowledge_escalation(
     current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN", "SUPERVISOR"])),
 ):
     """Acknowledge an escalation and move back to ASSIGNED."""
-    wo = await db.get(WorkOrder, wo_id)
+    wo = await _get_wo_with_joins(db, wo_id)
     if not wo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     await verify_org_ownership(wo, current_user)

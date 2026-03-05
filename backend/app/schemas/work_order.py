@@ -83,6 +83,22 @@ class WorkOrderCreate(BaseModel):
     tags: list[str] = Field(default_factory=list)
     custom_fields: Optional[dict[str, Any]] = None
 
+    @field_validator("custom_fields", mode="before")
+    @classmethod
+    def validate_custom_fields(cls, v: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
+        if v is None:
+            return v
+        if not isinstance(v, dict):
+            raise ValueError("custom_fields must be a dict")
+        if len(v) > 50:
+            raise ValueError("custom_fields cannot have more than 50 keys")
+        for key, val in v.items():
+            if not isinstance(key, str) or len(key) > 255:
+                raise ValueError("custom_fields keys must be strings of at most 255 characters")
+            if isinstance(val, str) and len(val) > 2000:
+                raise ValueError("custom_fields string values must be at most 2000 characters")
+        return v
+
     @field_validator("title", mode="before")
     @classmethod
     def strip_title(cls, v: str) -> str:
@@ -196,29 +212,37 @@ class WorkOrderResponse(BaseModel):
     area_name: Optional[str] = None
     site_name: Optional[str] = None
     asset_name: Optional[str] = None
-    assigned_to_name: Optional[str] = None
-    created_by_name: Optional[str] = None
+    assignee_name: Optional[str] = None
+    requester_name: Optional[str] = None
 
     eta_minutes: Optional[int] = None
     resolution_summary: Optional[str] = None
     resolution_details: Optional[str] = None
 
-    sla_response_due_at: Optional[datetime] = None
-    sla_resolve_due_at: Optional[datetime] = None
+    ack_deadline: Optional[datetime] = None
+    first_update_deadline: Optional[datetime] = None
+    due_at: Optional[datetime] = None
     sla_response_breached: bool = False
     sla_resolve_breached: bool = False
 
-    escalated: bool = False
     escalated_at: Optional[datetime] = None
-    escalation_reason: Optional[str] = None
 
+    assigned_at: Optional[datetime] = None
     accepted_at: Optional[datetime] = None
-    started_at: Optional[datetime] = None
+    in_progress_at: Optional[datetime] = None
     resolved_at: Optional[datetime] = None
+    verified_at: Optional[datetime] = None
     closed_at: Optional[datetime] = None
-    reopened_at: Optional[datetime] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
+
+    # GPS snapshots
+    gps_lat_accept: Optional[float] = None
+    gps_lng_accept: Optional[float] = None
+    gps_lat_start: Optional[float] = None
+    gps_lng_start: Optional[float] = None
+    gps_lat_resolve: Optional[float] = None
+    gps_lng_resolve: Optional[float] = None
 
 
 class WorkOrderListResponse(BaseModel):

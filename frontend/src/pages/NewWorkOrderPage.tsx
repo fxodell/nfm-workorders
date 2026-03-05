@@ -331,18 +331,16 @@ export default function NewWorkOrderPage() {
         custom_fields: Object.keys(form.custom_fields).length > 0 ? form.custom_fields : undefined,
       };
 
-      const response = await workOrderApi.create(payload, idempotencyKey);
+      const wo = await workOrderApi.create(payload, idempotencyKey);
 
       // Upload photos if any
       if (photos.length > 0) {
         for (const photo of photos) {
-          const formData = new FormData();
-          formData.append('file', photo);
-          await workOrderApi.createAttachment(response.data.id, formData);
+          await workOrderApi.createAttachment(wo.id, photo);
         }
       }
 
-      return response.data;
+      return wo;
     },
     onSuccess: (wo) => {
       queryClient.invalidateQueries({ queryKey: ['workOrders'] });
@@ -389,6 +387,10 @@ export default function NewWorkOrderPage() {
         created_at: new Date().toISOString(),
       });
 
+      // Reset form state to prevent duplicate submissions on back-navigation
+      setForm({ ...initialForm });
+      setPhotos([]);
+      setPhotoPreviewUrls([]);
       resetKey();
       navigate('/work-orders', { replace: true });
       return;

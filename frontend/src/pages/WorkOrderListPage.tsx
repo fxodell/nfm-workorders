@@ -235,7 +235,7 @@ export default function WorkOrderListPage() {
   } = useInfiniteQuery({
     queryKey: ['workOrders', activeTab, debouncedSearch, statusFilter, priorityFilter, typeFilter, safetyFilter, sortField],
     queryFn: ({ pageParam = 1 }) =>
-      workOrderApi.list(buildFilters(pageParam as number)).then((r) => r.data),
+      workOrderApi.list(buildFilters(pageParam as number)),
     getNextPageParam: (lastPage: WorkOrderListResponse) => {
       const nextPage = lastPage.page + 1;
       const totalPages = Math.ceil(lastPage.total / lastPage.per_page);
@@ -262,6 +262,8 @@ export default function WorkOrderListPage() {
           if (!b.due_at) return -1;
           return new Date(a.due_at).getTime() - new Date(b.due_at).getTime();
         case 'updated_desc':
+          if (!a.updated_at) return 1;
+          if (!b.updated_at) return -1;
           return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
         case 'created_desc':
         default:

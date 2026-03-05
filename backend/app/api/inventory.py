@@ -31,7 +31,7 @@ router = APIRouter(prefix="/inventory", tags=["inventory"])
 
 # ── GET / ──────────────────────────────────────────────────────────────
 
-@router.get("/", response_model=list[PartResponse])
+@router.get("", response_model=list[PartResponse])
 async def list_inventory(
     low_stock: Optional[bool] = Query(None, description="Filter parts below reorder threshold"),
     search: Optional[str] = Query(None),
@@ -56,7 +56,7 @@ async def list_inventory(
 
 # ── POST / ─────────────────────────────────────────────────────────────
 
-@router.post("/", response_model=PartResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=PartResponse, status_code=status.HTTP_201_CREATED)
 async def create_inventory_item(
     body: PartCreate,
     db: AsyncSession = Depends(get_db),

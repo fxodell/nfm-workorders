@@ -319,6 +319,30 @@ class WorkOrder(Base):
         back_populates="generated_work_order",
     )
 
+    # -----------------------------------------------------------------------
+    # Computed name properties (require selectinload on the relationships)
+    # -----------------------------------------------------------------------
+
+    @property
+    def area_name(self) -> str | None:
+        return self.area.name if self.area else None
+
+    @property
+    def site_name(self) -> str | None:
+        return self.site.name if self.site else None
+
+    @property
+    def asset_name(self) -> str | None:
+        return self.asset.name if self.asset else None
+
+    @property
+    def assignee_name(self) -> str | None:
+        return self.assignee.name if self.assignee else None
+
+    @property
+    def requester_name(self) -> str | None:
+        return self.requester.name if self.requester else None
+
     def __repr__(self) -> str:
         return f"<WorkOrder {self.human_readable_number!r} [{self.status.value}]>"
 

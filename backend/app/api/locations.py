@@ -32,7 +32,7 @@ router = APIRouter(prefix="/locations", tags=["locations"])
 
 # ── GET / ──────────────────────────────────────────────────────────────
 
-@router.get("/", response_model=list[LocationResponse])
+@router.get("", response_model=list[LocationResponse])
 async def list_locations(
     area_id: uuid.UUID | None = None,
     db: AsyncSession = Depends(get_db),
@@ -49,7 +49,7 @@ async def list_locations(
 
 # ── POST / ─────────────────────────────────────────────────────────────
 
-@router.post("/", response_model=LocationResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=LocationResponse, status_code=status.HTTP_201_CREATED)
 async def create_location(
     body: LocationCreate,
     db: AsyncSession = Depends(get_db),

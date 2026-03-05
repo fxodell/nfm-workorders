@@ -10,12 +10,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import redis.asyncio as aioredis
+
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import (
     get_current_active_user,
     require_role,
     verify_org_ownership,
 )
+from app.core.redis import get_redis, revoke_all_user_tokens
 from app.core.security import hash_password
 from app.models.shift import ShiftSchedule, UserShiftAssignment
 from app.models.user import (
@@ -195,7 +199,7 @@ async def get_my_shifts(
 
 # ── GET / (list users, ADMIN only) ─────────────────────────────────────
 
-@router.get("/", response_model=UserListResponse)
+@router.get("", response_model=UserListResponse)
 async def list_users(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
@@ -233,7 +237,7 @@ async def list_users(
 
 # ── POST / (create user, ADMIN only) ──────────────────────────────────
 
-@router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(
     body: UserCreate,
     db: AsyncSession = Depends(get_db),
@@ -315,6 +319,7 @@ async def update_user(
 async def delete_user(
     user_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    r: aioredis.Redis = Depends(get_redis),
     current_user: User = Depends(require_role(["SUPER_ADMIN", "ADMIN"])),
 ):
     """Soft-delete a user (ADMIN only). Sets is_active to False."""
@@ -332,6 +337,10 @@ async def delete_user(
     user.is_active = False
     user.updated_at = datetime.now(timezone.utc)
     await db.flush()
+
+    # Revoke all tokens so the disabled user is immediately logged out
+    await revoke_all_user_tokens(r, str(user_id), settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400)
+
     return MessageResponse(message="User deactivated")
 
 
