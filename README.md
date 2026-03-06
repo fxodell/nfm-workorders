@@ -130,15 +130,15 @@ After running the seed script, the following accounts are available:
 
 | Role          | Email                                   | Password         |
 |---------------|-----------------------------------------|------------------|
-| Admin         | admin@permian-basin-ops.com             | admin123!        |
-| Supervisor    | supervisor@permian-basin-ops.com        | supervisor123!   |
-| Operator      | operator@permian-basin-ops.com          | operator123!     |
-| Technician    | tech1@permian-basin-ops.com             | tech123!         |
-| Technician    | tech2@permian-basin-ops.com             | tech123!         |
-| Technician    | tech3@permian-basin-ops.com             | tech123!         |
-| Read-Only     | viewer@permian-basin-ops.com            | viewer123!       |
-| Cost Analyst  | analyst@permian-basin-ops.com           | analyst123!      |
-| Super Admin   | superadmin@permian-basin-ops.com        | super123!        |
+| Admin         | admin@apachecorp.com             | admin123!        |
+| Supervisor    | supervisor@apachecorp.com        | supervisor123!   |
+| Operator      | operator@apachecorp.com          | operator123!     |
+| Technician    | tech1@apachecorp.com             | tech123!         |
+| Technician    | tech2@apachecorp.com             | tech123!         |
+| Technician    | tech3@apachecorp.com             | tech123!         |
+| Read-Only     | viewer@apachecorp.com            | viewer123!       |
+| Cost Analyst  | analyst@apachecorp.com           | analyst123!      |
+| Super Admin   | superadmin@apachecorp.com        | super123!        |
 
 ### Eagle Ford Services (secondary org)
 

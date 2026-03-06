@@ -38,58 +38,43 @@ _ACTIVE_STATUSES = {
     WorkOrderStatus.WAITING_ON_PARTS,
 }
 
+_ALL_OPERATIONAL = {
+    UserRole.TECHNICIAN.value,
+    UserRole.OPERATOR.value,
+    UserRole.SUPERVISOR.value,
+    UserRole.ADMIN.value,
+    UserRole.SUPER_ADMIN.value,
+}
+
+_SUPERVISOR_UP = {
+    UserRole.SUPERVISOR.value,
+    UserRole.ADMIN.value,
+    UserRole.SUPER_ADMIN.value,
+}
+
 _FSM_TRANSITIONS: dict[tuple[WorkOrderStatus, WorkOrderStatus], set[str]] = {
-    (WorkOrderStatus.NEW, WorkOrderStatus.ASSIGNED): {
-        UserRole.SUPERVISOR.value,
-        UserRole.ADMIN.value,
-    },
-    (WorkOrderStatus.NEW, WorkOrderStatus.ACCEPTED): {
-        UserRole.TECHNICIAN.value,
-    },
-    (WorkOrderStatus.ASSIGNED, WorkOrderStatus.ACCEPTED): {
-        UserRole.TECHNICIAN.value,
-        UserRole.SUPERVISOR.value,
-    },
-    (WorkOrderStatus.ACCEPTED, WorkOrderStatus.IN_PROGRESS): {
-        UserRole.TECHNICIAN.value,
-        UserRole.SUPERVISOR.value,
-    },
-    (WorkOrderStatus.IN_PROGRESS, WorkOrderStatus.WAITING_ON_OPS): {
-        UserRole.TECHNICIAN.value,
-    },
-    (WorkOrderStatus.IN_PROGRESS, WorkOrderStatus.WAITING_ON_PARTS): {
-        UserRole.TECHNICIAN.value,
-    },
-    (WorkOrderStatus.WAITING_ON_OPS, WorkOrderStatus.IN_PROGRESS): {
-        UserRole.TECHNICIAN.value,
-        UserRole.SUPERVISOR.value,
-    },
-    (WorkOrderStatus.WAITING_ON_PARTS, WorkOrderStatus.IN_PROGRESS): {
-        UserRole.TECHNICIAN.value,
-        UserRole.SUPERVISOR.value,
-    },
-    (WorkOrderStatus.IN_PROGRESS, WorkOrderStatus.RESOLVED): {
-        UserRole.TECHNICIAN.value,
-    },
-    (WorkOrderStatus.RESOLVED, WorkOrderStatus.VERIFIED): {
-        UserRole.OPERATOR.value,
-        UserRole.SUPERVISOR.value,
-        UserRole.ADMIN.value,
-    },
-    (WorkOrderStatus.VERIFIED, WorkOrderStatus.CLOSED): {
-        UserRole.SUPERVISOR.value,
-        UserRole.ADMIN.value,
-    },
+    (WorkOrderStatus.NEW, WorkOrderStatus.ASSIGNED): _SUPERVISOR_UP,
+    (WorkOrderStatus.NEW, WorkOrderStatus.ACCEPTED): _ALL_OPERATIONAL,
+    (WorkOrderStatus.ASSIGNED, WorkOrderStatus.ACCEPTED): _ALL_OPERATIONAL,
+    (WorkOrderStatus.ACCEPTED, WorkOrderStatus.IN_PROGRESS): _ALL_OPERATIONAL,
+    (WorkOrderStatus.IN_PROGRESS, WorkOrderStatus.WAITING_ON_OPS): _ALL_OPERATIONAL,
+    (WorkOrderStatus.IN_PROGRESS, WorkOrderStatus.WAITING_ON_PARTS): _ALL_OPERATIONAL,
+    (WorkOrderStatus.WAITING_ON_OPS, WorkOrderStatus.IN_PROGRESS): _ALL_OPERATIONAL,
+    (WorkOrderStatus.WAITING_ON_PARTS, WorkOrderStatus.IN_PROGRESS): _ALL_OPERATIONAL,
+    (WorkOrderStatus.IN_PROGRESS, WorkOrderStatus.RESOLVED): _ALL_OPERATIONAL,
+    (WorkOrderStatus.RESOLVED, WorkOrderStatus.VERIFIED): _SUPERVISOR_UP,
+    (WorkOrderStatus.VERIFIED, WorkOrderStatus.CLOSED): _SUPERVISOR_UP,
     (WorkOrderStatus.CLOSED, WorkOrderStatus.RESOLVED): {
         UserRole.ADMIN.value,
+        UserRole.SUPER_ADMIN.value,
     },
 }
 
 # Roles allowed to escalate (system escalation bypasses role check)
-_ESCALATION_ROLES = {UserRole.SUPERVISOR.value, UserRole.ADMIN.value}
+_ESCALATION_ROLES = _ALL_OPERATIONAL
 
 # Roles allowed to de-escalate
-_DE_ESCALATION_ROLES = {UserRole.SUPERVISOR.value, UserRole.ADMIN.value}
+_DE_ESCALATION_ROLES = _SUPERVISOR_UP
 
 # Default SLA deadlines in minutes per priority
 _DEFAULT_SLA: dict[str, dict[str, int]] = {

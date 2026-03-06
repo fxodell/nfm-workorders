@@ -447,8 +447,7 @@ async def _create_users(
             "email": f"admin@{slug}.com",
             "password": "admin123!",
             "role": UserRole.ADMIN,
-            "mfa_enabled": True,
-            "totp_secret": "JBSWY3DPEHPK3PXP",  # test secret
+            "mfa_enabled": False,
         },
         {
             "name": "Field Supervisor",
@@ -511,6 +510,12 @@ async def _create_users(
 
     users: dict[str, User] = {}
     for udef in user_defs:
+        # Skip hardcoded emails that may already exist from another org
+        existing = await session.execute(
+            select(User).where(User.email == udef["email"])
+        )
+        if existing.scalars().first() is not None:
+            continue
         user = User(
             org_id=org_id,
             name=udef["name"],
@@ -1278,13 +1283,25 @@ async def seed() -> None:
             wo_counter1 = await _create_wo_counter(session, org1.id)
             print(f"  WO Counter: year={wo_counter1.year}")
 
-            users1 = await _create_users(session, org1.id, "permian-basin-ops")
+            users1 = await _create_users(session, org1.id, "apachecorp")
             print(f"  Users: {len(users1)} created")
             for label, user in users1.items():
                 print(f"    {user.role.value:<15} {user.email}")
 
             areas1 = await _create_areas(session, org1.id)
             print(f"  Areas: {len(areas1)} created")
+
+            # Assign all non-readonly users to all areas
+            from app.models.user import UserAreaAssignment
+            area_assign_count = 0
+            for _label, u in users1.items():
+                if u.role.value in ("READ_ONLY", "COST_ANALYST"):
+                    continue
+                for area in areas1:
+                    session.add(UserAreaAssignment(user_id=u.id, area_id=area.id))
+                    area_assign_count += 1
+            await session.flush()
+            print(f"  Area Assignments: {area_assign_count} created")
 
             locations1 = await _create_locations(
                 session, org1.id, areas1, PERMIAN_GPS
@@ -1366,6 +1383,16 @@ async def seed() -> None:
 
             areas2 = await _create_areas(session, org2.id)
             print(f"  Areas: {len(areas2)} created")
+
+            area_assign_count2 = 0
+            for _label, u in users2.items():
+                if u.role.value in ("READ_ONLY", "COST_ANALYST"):
+                    continue
+                for area in areas2:
+                    session.add(UserAreaAssignment(user_id=u.id, area_id=area.id))
+                    area_assign_count2 += 1
+            await session.flush()
+            print(f"  Area Assignments: {area_assign_count2} created")
 
             locations2 = await _create_locations(
                 session, org2.id, areas2, EAGLE_FORD_GPS
@@ -1451,10 +1478,10 @@ async def seed() -> None:
   Default Credentials:
   ────────────────────────────────────────
   Org 1 (Permian Basin Operations):
-    Admin:       admin@permian-basin-ops.com / admin123!
-    Supervisor:  supervisor@permian-basin-ops.com / supervisor123!
-    Operator:    operator@permian-basin-ops.com / operator123!
-    Tech:        tech1@permian-basin-ops.com / tech123!
+    Admin:       admin@apachecorp.com / admin123!
+    Supervisor:  supervisor@apachecorp.com / supervisor123!
+    Operator:    operator@apachecorp.com / operator123!
+    Tech:        tech1@apachecorp.com / tech123!
 
   Org 2 (Eagle Ford Services):
     Admin:       admin@eagle-ford-services.com / admin123!

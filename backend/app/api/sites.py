@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.core.database import get_db
@@ -189,6 +190,13 @@ async def get_site_work_order_history(
     total = (await db.execute(count_q)).scalar() or 0
 
     query = base_query.order_by(WorkOrder.created_at.desc())
+    query = query.options(
+        selectinload(WorkOrder.area),
+        selectinload(WorkOrder.site),
+        selectinload(WorkOrder.asset),
+        selectinload(WorkOrder.requester),
+        selectinload(WorkOrder.assignee),
+    )
     query = query.offset((page - 1) * per_page).limit(per_page)
     result = await db.execute(query)
     items = result.scalars().all()

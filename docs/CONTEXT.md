@@ -39,4 +39,4 @@ OilfieldMaint is a multi-tenant CMMS (Computerized Maintenance Management System
 3. `docker compose exec backend alembic upgrade head`
 4. `docker compose exec backend python -m scripts.seed`
 5. Frontend: http://localhost:5173 | API docs: http://localhost:8002/docs
-6. Login with `admin@permian-basin-ops.com` / `admin123!`
+6. Login with `admin@apachecorp.com` / `admin123!`

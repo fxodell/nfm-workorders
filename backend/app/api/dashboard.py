@@ -11,10 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.deps import get_current_active_user, verify_area_access, verify_org_ownership
 from app.models.area import Area
+from app.models.location import Location
 from app.models.site import Site
 from app.models.user import User, UserAreaAssignment
 from app.models.work_order import WorkOrder, WorkOrderStatus
-from app.schemas.dashboard import AreaDashboard, DashboardOverview, SiteDashboard
+from app.schemas.dashboard import AreaDashboard, AssignedTech, DashboardOverview, SiteDashboard
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -92,6 +93,95 @@ async def dashboard_overview(
         )
         safety_count = safety_result.scalar() or 0
 
+        # Per-site summaries
+        sites_result = await db.execute(
+            select(Site)
+            .join(Location, Location.id == Site.location_id)
+            .where(
+                Location.area_id == area.id,
+                Site.org_id == current_user.org_id,
+                Site.is_active == True,  # noqa: E712
+            )
+        )
+        sites = sites_result.scalars().all()
+
+        site_dashboards = []
+        for site in sites:
+            wo_count_result = await db.execute(
+                select(func.count()).where(
+                    WorkOrder.site_id == site.id,
+                    WorkOrder.org_id == current_user.org_id,
+                    WorkOrder.status.in_(_OPEN_STATUSES),
+                )
+            )
+            wo_count = wo_count_result.scalar() or 0
+
+            site_esc_result = await db.execute(
+                select(func.count()).where(
+                    WorkOrder.site_id == site.id,
+                    WorkOrder.org_id == current_user.org_id,
+                    WorkOrder.status == WorkOrderStatus.ESCALATED,
+                )
+            )
+            site_esc = (site_esc_result.scalar() or 0) > 0
+
+            site_sf_result = await db.execute(
+                select(func.count()).where(
+                    WorkOrder.site_id == site.id,
+                    WorkOrder.org_id == current_user.org_id,
+                    WorkOrder.status.in_(_OPEN_STATUSES),
+                    WorkOrder.safety_flag == True,  # noqa: E712
+                )
+            )
+            site_sf = (site_sf_result.scalar() or 0) > 0
+
+            highest_result = await db.execute(
+                select(WorkOrder.priority)
+                .where(
+                    WorkOrder.site_id == site.id,
+                    WorkOrder.org_id == current_user.org_id,
+                    WorkOrder.status.in_(_OPEN_STATUSES),
+                )
+                .order_by(
+                    case(
+                        (WorkOrder.priority == "IMMEDIATE", 1),
+                        (WorkOrder.priority == "URGENT", 2),
+                        (WorkOrder.priority == "SCHEDULED", 3),
+                        (WorkOrder.priority == "DEFERRED", 4),
+                        else_=5,
+                    )
+                )
+                .limit(1)
+            )
+            highest_priority_row = highest_result.scalars().first()
+
+            # Assigned technicians
+            tech_result = await db.execute(
+                select(User.id, User.name)
+                .join(WorkOrder, WorkOrder.assigned_to == User.id)
+                .where(
+                    WorkOrder.site_id == site.id,
+                    WorkOrder.org_id == current_user.org_id,
+                    WorkOrder.status.in_(_OPEN_STATUSES),
+                    WorkOrder.assigned_to.isnot(None),
+                )
+                .distinct()
+            )
+            assigned_techs = [AssignedTech(id=row[0], name=row[1]) for row in tech_result]
+
+            site_dashboards.append(
+                SiteDashboard(
+                    site_id=site.id,
+                    site_name=site.name,
+                    site_type=site.type,
+                    highest_priority=highest_priority_row,
+                    wo_count=wo_count,
+                    escalated=site_esc,
+                    safety_flag=site_sf,
+                    assigned_techs=assigned_techs,
+                )
+            )
+
         area_dashboards.append(
             AreaDashboard(
                 area_id=area.id,
@@ -99,6 +189,7 @@ async def dashboard_overview(
                 priority_counts=priority_counts,
                 escalated_count=escalated_count,
                 safety_flag_count=safety_count,
+                sites=site_dashboards,
             )
         )
 
@@ -152,7 +243,6 @@ async def area_dashboard(
     safety_count = safety_result.scalar() or 0
 
     # Per-site summaries
-    from app.models.location import Location
     sites_result = await db.execute(
         select(Site)
         .join(Location, Location.id == Site.location_id)
@@ -215,6 +305,20 @@ async def area_dashboard(
         )
         highest_priority_row = highest_result.scalars().first()
 
+        # Assigned technicians
+        tech_result = await db.execute(
+            select(User.id, User.name)
+            .join(WorkOrder, WorkOrder.assigned_to == User.id)
+            .where(
+                WorkOrder.site_id == site.id,
+                WorkOrder.org_id == current_user.org_id,
+                WorkOrder.status.in_(_OPEN_STATUSES),
+                WorkOrder.assigned_to.isnot(None),
+            )
+            .distinct()
+        )
+        assigned_techs = [AssignedTech(id=row[0], name=row[1]) for row in tech_result]
+
         site_dashboards.append(
             SiteDashboard(
                 site_id=site.id,
@@ -224,6 +328,7 @@ async def area_dashboard(
                 wo_count=wo_count,
                 escalated=site_esc,
                 safety_flag=site_sf,
+                assigned_techs=assigned_techs,
             )
         )
 
@@ -291,7 +396,7 @@ async def site_dashboard(
 
     # Assigned technicians
     tech_result = await db.execute(
-        select(User.name)
+        select(User.id, User.name)
         .join(WorkOrder, WorkOrder.assigned_to == User.id)
         .where(
             WorkOrder.site_id == site_id,
@@ -301,7 +406,7 @@ async def site_dashboard(
         )
         .distinct()
     )
-    assigned_techs = [row[0] for row in tech_result]
+    assigned_techs = [AssignedTech(id=row[0], name=row[1]) for row in tech_result]
 
     return SiteDashboard(
         site_id=site.id,

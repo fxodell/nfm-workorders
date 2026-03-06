@@ -61,6 +61,11 @@ export default function WorkOrderDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['workOrders', id, 'timeline'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     },
+    onError: (err: Error & { response?: { data?: { detail?: string } } }) => {
+      const detail = err.response?.data?.detail;
+      const msg = typeof detail === 'string' ? detail : err.message || 'Action failed';
+      alert(msg);
+    },
   });
 
   const addPartMutation = useMutation({

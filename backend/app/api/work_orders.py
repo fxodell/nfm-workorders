@@ -48,12 +48,7 @@ router = APIRouter(prefix="/work-orders", tags=["work-orders"])
 
 
 def _validate_transition(current: WorkOrderStatus, target: WorkOrderStatus, user_role: str = "SUPER_ADMIN") -> None:
-    """Validate FSM transition using the canonical service function.
-
-    Endpoints that already enforce roles via ``require_role()`` may pass
-    SUPER_ADMIN as a default so the service-level role check never blocks
-    (the route-level guard is authoritative).
-    """
+    """Validate FSM transition using the canonical service function."""
     validate_fsm_transition(current, target, user_role)
 
 
@@ -269,6 +264,40 @@ async def create_work_order(
         db, wo, current_user, TimelineEventType.STATUS_CHANGE,
         {"title": wo.title, "priority": wo.priority.value},
     )
+
+    # Handle optional assignment during creation
+    if body.assigned_to is not None:
+        assign_roles = {"SUPER_ADMIN", "ADMIN", "SUPERVISOR"}
+        if current_user.role.value not in assign_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only supervisors and admins can assign work orders",
+            )
+        assignee = await db.get(User, body.assigned_to)
+        if not assignee or assignee.org_id != current_user.org_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Assignee not found",
+            )
+        area_check = await db.execute(
+            select(UserAreaAssignment).where(
+                UserAreaAssignment.user_id == body.assigned_to,
+                UserAreaAssignment.area_id == body.area_id,
+            )
+        )
+        if area_check.scalars().first() is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Assignee is not assigned to this work order's area",
+            )
+        wo.assigned_to = body.assigned_to
+        wo.assigned_at = datetime.now(timezone.utc)
+        wo.status = WorkOrderStatus.ASSIGNED
+        wo.updated_at = datetime.now(timezone.utc)
+        await _create_timeline_event(
+            db, wo, current_user, TimelineEventType.STATUS_CHANGE,
+            {"assigned_to": str(body.assigned_to), "assigned_by": str(current_user.id)},
+        )
+
     await db.flush()
 
     # Re-fetch with eager-loaded relationships for name resolution
@@ -374,7 +403,7 @@ async def assign_work_order(
     if not wo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     await verify_org_ownership(wo, current_user)
-    _validate_transition(wo.status, WorkOrderStatus.ASSIGNED)
+    _validate_transition(wo.status, WorkOrderStatus.ASSIGNED, current_user.role.value)
 
     # Verify assignee exists and belongs to same org
     assignee = await db.get(User, body.assigned_to)
@@ -412,7 +441,7 @@ async def assign_work_order(
 @router.post("/{wo_id}/accept", response_model=WorkOrderResponse)
 async def accept_work_order(
     wo_id: uuid.UUID,
-    body: WorkOrderAccept,
+    body: WorkOrderAccept = WorkOrderAccept(),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -421,7 +450,7 @@ async def accept_work_order(
     if not wo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     await verify_org_ownership(wo, current_user)
-    _validate_transition(wo.status, WorkOrderStatus.ACCEPTED)
+    _validate_transition(wo.status, WorkOrderStatus.ACCEPTED, current_user.role.value)
 
     # Check required certification
     if wo.required_cert:
@@ -471,7 +500,7 @@ async def start_work_order(
     if not wo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     await verify_org_ownership(wo, current_user)
-    _validate_transition(wo.status, WorkOrderStatus.IN_PROGRESS)
+    _validate_transition(wo.status, WorkOrderStatus.IN_PROGRESS, current_user.role.value)
 
     wo.status = WorkOrderStatus.IN_PROGRESS
     wo.in_progress_at = datetime.now(timezone.utc)
@@ -497,7 +526,7 @@ async def wait_ops(
     if not wo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     await verify_org_ownership(wo, current_user)
-    _validate_transition(wo.status, WorkOrderStatus.WAITING_ON_OPS)
+    _validate_transition(wo.status, WorkOrderStatus.WAITING_ON_OPS, current_user.role.value)
 
     wo.status = WorkOrderStatus.WAITING_ON_OPS
     wo.updated_at = datetime.now(timezone.utc)
@@ -523,7 +552,7 @@ async def wait_parts(
     if not wo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     await verify_org_ownership(wo, current_user)
-    _validate_transition(wo.status, WorkOrderStatus.WAITING_ON_PARTS)
+    _validate_transition(wo.status, WorkOrderStatus.WAITING_ON_PARTS, current_user.role.value)
 
     wo.status = WorkOrderStatus.WAITING_ON_PARTS
     wo.updated_at = datetime.now(timezone.utc)
@@ -549,7 +578,7 @@ async def resume_work_order(
     if not wo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     await verify_org_ownership(wo, current_user)
-    _validate_transition(wo.status, WorkOrderStatus.IN_PROGRESS)
+    _validate_transition(wo.status, WorkOrderStatus.IN_PROGRESS, current_user.role.value)
 
     wo.status = WorkOrderStatus.IN_PROGRESS
     wo.updated_at = datetime.now(timezone.utc)
@@ -576,7 +605,7 @@ async def resolve_work_order(
     if not wo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     await verify_org_ownership(wo, current_user)
-    _validate_transition(wo.status, WorkOrderStatus.RESOLVED)
+    _validate_transition(wo.status, WorkOrderStatus.RESOLVED, current_user.role.value)
 
     wo.status = WorkOrderStatus.RESOLVED
     wo.resolution_summary = body.resolution_summary
@@ -605,7 +634,7 @@ async def verify_work_order(
     if not wo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     await verify_org_ownership(wo, current_user)
-    _validate_transition(wo.status, WorkOrderStatus.VERIFIED)
+    _validate_transition(wo.status, WorkOrderStatus.VERIFIED, current_user.role.value)
 
     wo.status = WorkOrderStatus.VERIFIED
     wo.verified_by = current_user.id
@@ -633,7 +662,7 @@ async def close_work_order(
     if not wo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     await verify_org_ownership(wo, current_user)
-    _validate_transition(wo.status, WorkOrderStatus.CLOSED)
+    _validate_transition(wo.status, WorkOrderStatus.CLOSED, current_user.role.value)
 
     wo.status = WorkOrderStatus.CLOSED
     wo.closed_by = current_user.id
@@ -662,7 +691,7 @@ async def reopen_work_order(
     if not wo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     await verify_org_ownership(wo, current_user)
-    _validate_transition(wo.status, WorkOrderStatus.RESOLVED)
+    _validate_transition(wo.status, WorkOrderStatus.RESOLVED, current_user.role.value)
 
     wo.status = WorkOrderStatus.RESOLVED
     wo.closed_at = None
@@ -670,7 +699,7 @@ async def reopen_work_order(
     wo.updated_at = datetime.now(timezone.utc)
 
     await _create_timeline_event(
-        db, wo, current_user, TimelineEventType.COMMENT,
+        db, wo, current_user, TimelineEventType.MESSAGE,
         {"action": "REOPENED", "reason": body.reason},
     )
     await db.flush()
@@ -682,7 +711,7 @@ async def reopen_work_order(
 @router.post("/{wo_id}/escalate", response_model=WorkOrderResponse)
 async def escalate_work_order(
     wo_id: uuid.UUID,
-    body: WorkOrderEscalate,
+    body: WorkOrderEscalate = WorkOrderEscalate(),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -691,7 +720,7 @@ async def escalate_work_order(
     if not wo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     await verify_org_ownership(wo, current_user)
-    _validate_transition(wo.status, WorkOrderStatus.ESCALATED)
+    _validate_transition(wo.status, WorkOrderStatus.ESCALATED, current_user.role.value)
 
     wo.status = WorkOrderStatus.ESCALATED
     wo.escalated_at = datetime.now(timezone.utc)
@@ -729,7 +758,7 @@ async def acknowledge_escalation(
     wo.updated_at = datetime.now(timezone.utc)
 
     await _create_timeline_event(
-        db, wo, current_user, TimelineEventType.COMMENT,
+        db, wo, current_user, TimelineEventType.MESSAGE,
         {"action": "ESCALATION_ACKNOWLEDGED", "acknowledged_by": str(current_user.id)},
     )
     await db.flush()

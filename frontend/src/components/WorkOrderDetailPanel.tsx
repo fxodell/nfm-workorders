@@ -310,7 +310,11 @@ export default function WorkOrderDetailPanel({
       {/* Tab Content */}
       <div className="flex-1 overflow-auto">
         {activeTab === 'details' && (
-          <DetailsTab workOrder={workOrder} />
+          <DetailsTab
+            workOrder={workOrder}
+            currentUserId={currentUserId}
+            currentUserRole={currentUserRole}
+          />
         )}
         {activeTab === 'timeline' && (
           <TimelineView events={timelineEvents} />
@@ -374,7 +378,20 @@ export default function WorkOrderDetailPanel({
 
 /* ── Details Sub-Tab ────────────────────────────────────────── */
 
-function DetailsTab({ workOrder }: { workOrder: WorkOrder }) {
+function DetailsTab({
+  workOrder,
+  currentUserId,
+  currentUserRole,
+}: {
+  workOrder: WorkOrder;
+  currentUserId: string;
+  currentUserRole: UserRole;
+}) {
+  const hasSiteGps = workOrder.site_gps_lat != null && workOrder.site_gps_lng != null;
+  const siteMapsUrl = hasSiteGps
+    ? `https://www.google.com/maps?q=${workOrder.site_gps_lat},${workOrder.site_gps_lng}`
+    : null;
+
   return (
     <div className="p-4 space-y-6">
       {/* Description */}
@@ -392,6 +409,23 @@ function DetailsTab({ workOrder }: { workOrder: WorkOrder }) {
           )}
           {workOrder.site_name && (
             <DetailRow icon={MapPin} label="Site" value={workOrder.site_name} />
+          )}
+          {workOrder.site_address && (
+            <DetailRow icon={MapPin} label="Address" value={workOrder.site_address} />
+          )}
+          {hasSiteGps && siteMapsUrl && (
+            <div className="flex items-center gap-2">
+              <MapPin size={14} className="text-gray-400 shrink-0" />
+              <span className="text-gray-500 min-w-[100px]">Site GPS</span>
+              <a
+                href={siteMapsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:text-blue-800 underline font-mono text-sm"
+              >
+                {workOrder.site_gps_lat!.toFixed(6)}, {workOrder.site_gps_lng!.toFixed(6)}
+              </a>
+            </div>
           )}
           {workOrder.asset_name && (
             <DetailRow icon={Wrench} label="Asset" value={workOrder.asset_name} />

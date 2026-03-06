@@ -11,6 +11,13 @@ from app.schemas.site import SiteType
 from app.schemas.work_order import WOPriority
 
 
+class AssignedTech(BaseModel):
+    """Technician assigned to a site's open work orders."""
+
+    id: UUID
+    name: str
+
+
 class SiteDashboard(BaseModel):
     """Per-site summary in the dashboard view."""
 
@@ -25,7 +32,7 @@ class SiteDashboard(BaseModel):
     safety_flag: bool = False
     waiting_on_ops: int = 0
     waiting_on_parts: int = 0
-    assigned_techs: list[str] = []
+    assigned_techs: list[AssignedTech] = []
 
 
 class AreaDashboard(BaseModel):

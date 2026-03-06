@@ -73,6 +73,7 @@ class WorkOrderCreate(BaseModel):
     area_id: UUID
     site_id: UUID
     asset_id: Optional[UUID] = None
+    assigned_to: Optional[UUID] = None
     title: str = Field(..., min_length=1, max_length=255)
     description: str = Field(..., min_length=20)
     type: WOType
@@ -211,6 +212,9 @@ class WorkOrderResponse(BaseModel):
     # Resolved names for convenience
     area_name: Optional[str] = None
     site_name: Optional[str] = None
+    site_address: Optional[str] = None
+    site_gps_lat: Optional[float] = None
+    site_gps_lng: Optional[float] = None
     asset_name: Optional[str] = None
     assignee_name: Optional[str] = None
     requester_name: Optional[str] = None

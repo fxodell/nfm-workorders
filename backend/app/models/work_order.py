@@ -332,6 +332,22 @@ class WorkOrder(Base):
         return self.site.name if self.site else None
 
     @property
+    def site_address(self) -> str | None:
+        return self.site.address if self.site else None
+
+    @property
+    def site_gps_lat(self) -> float | None:
+        if not self.site or self.site.gps_lat is None:
+            return None
+        return float(self.site.gps_lat)
+
+    @property
+    def site_gps_lng(self) -> float | None:
+        if not self.site or self.site.gps_lng is None:
+            return None
+        return float(self.site.gps_lng)
+
+    @property
     def asset_name(self) -> str | None:
         return self.asset.name if self.asset else None
 

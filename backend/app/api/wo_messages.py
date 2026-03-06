@@ -43,7 +43,7 @@ async def list_messages(
         select(TimelineEvent)
         .where(
             TimelineEvent.work_order_id == wo_id,
-            TimelineEvent.event_type == TimelineEventType.COMMENT,
+            TimelineEvent.event_type == TimelineEventType.MESSAGE,
         )
         .order_by(TimelineEvent.created_at.asc())
     )
@@ -96,7 +96,7 @@ async def send_message(
         work_order_id=wo_id,
         org_id=wo.org_id,
         user_id=current_user.id,
-        event_type=TimelineEventType.COMMENT,
+        event_type=TimelineEventType.MESSAGE,
         payload={"content": body.content, "type": "message"},
     )
     db.add(event)

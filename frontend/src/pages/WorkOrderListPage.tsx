@@ -3,13 +3,13 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import {
   Search, Plus, Filter, X, ChevronDown, AlertTriangle,
-  ClipboardList, ArrowUpCircle, Loader2, SortDesc,
+  ClipboardList, ArrowUpCircle, Loader2, SortDesc, Navigation,
 } from 'lucide-react';
 import { workOrderApi, type WorkOrderFilters } from '@/api/workOrders';
 import { useAuthStore } from '@/stores/authStore';
 import type { WorkOrder, WorkOrderListResponse } from '@/types/api';
 import {
-  WorkOrderStatus, WorkOrderPriority, WorkOrderType,
+  WorkOrderStatus, WorkOrderPriority, WorkOrderType, UserRole,
 } from '@/types/enums';
 import { formatDate, timeAgo } from '@/utils/dateFormat';
 import { getPriorityConfig } from '@/utils/priority';
@@ -27,12 +27,39 @@ const PAGE_SIZE = 20;
 
 // ------- Sub-components -------
 
-function WorkOrderCardItem({ wo }: { wo: WorkOrder }) {
+function WorkOrderCardItem({
+  wo,
+  currentUserId,
+  currentUserRole,
+}: {
+  wo: WorkOrder;
+  currentUserId?: string;
+  currentUserRole?: string;
+}) {
   const navigate = useNavigate();
+  const canOpenMaps = (
+    currentUserRole === UserRole.TECHNICIAN
+    && !!currentUserId
+    && wo.assigned_to === currentUserId
+    && wo.site_gps_lat != null
+    && wo.site_gps_lng != null
+  );
+  const mapsUrl = canOpenMaps
+    ? `https://www.google.com/maps?q=${wo.site_gps_lat},${wo.site_gps_lng}`
+    : null;
+  const onCardKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      navigate(`/work-orders/${wo.id}`);
+    }
+  };
 
   return (
-    <button
+    <div
       onClick={() => navigate(`/work-orders/${wo.id}`)}
+      onKeyDown={onCardKeyDown}
+      role="button"
+      tabIndex={0}
       className={`w-full p-4 bg-white rounded-xl border text-left transition-all hover:shadow-md active:bg-gray-50 min-h-[48px] ${
         wo.safety_flag
           ? 'border-red-300 border-l-4 border-l-red-500'
@@ -60,6 +87,20 @@ function WorkOrderCardItem({ wo }: { wo: WorkOrder }) {
         {wo.site_name && (
           <span className="text-xs text-gray-500 truncate max-w-[120px]">{wo.site_name}</span>
         )}
+        {mapsUrl && (
+          <a
+            href={mapsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+            className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-blue-600 hover:text-blue-700 hover:bg-blue-50 min-h-[32px] min-w-[32px]"
+            title="Open in Google Maps"
+            aria-label="Open in Google Maps"
+          >
+            <Navigation size={14} />
+          </a>
+        )}
         <span className="text-xs text-gray-400 ml-auto shrink-0">{timeAgo(wo.updated_at || wo.created_at)}</span>
       </div>
 
@@ -72,7 +113,7 @@ function WorkOrderCardItem({ wo }: { wo: WorkOrder }) {
           <span className="text-xs text-gray-500">{wo.assignee_name}</span>
         </div>
       )}
-    </button>
+    </div>
   );
 }
 
@@ -510,7 +551,12 @@ export default function WorkOrderListPage() {
           ) : (
             <div className="space-y-3">
               {workOrders.map((wo) => (
-                <WorkOrderCardItem key={wo.id} wo={wo} />
+                <WorkOrderCardItem
+                  key={wo.id}
+                  wo={wo}
+                  currentUserId={user?.id}
+                  currentUserRole={user?.role}
+                />
               ))}
 
               {/* Load more / infinite scroll trigger */}

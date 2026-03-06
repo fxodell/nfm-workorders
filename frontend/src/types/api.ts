@@ -92,6 +92,7 @@ export interface WorkOrder {
   tags?: string[]; custom_fields?: Record<string, unknown>;
   // Joined fields
   site_name?: string; area_name?: string; asset_name?: string;
+  site_address?: string; site_gps_lat?: number; site_gps_lng?: number;
   requester_name?: string; assignee_name?: string;
 }
 export interface WorkOrderListResponse { items: WorkOrder[]; total: number; page: number; per_page: number; }
